@@ -1,0 +1,31 @@
+[Unit]
+Description=KM40 weather dashboard
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=km40
+Group=km40
+WorkingDirectory=/var/lib/km40
+# Listens on loopback only; Caddy terminates TLS and proxies to it.
+ExecStart=/opt/km40/current/km40 -addr 127.0.0.1:8082 -db /var/lib/km40/km40.db
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/km40
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

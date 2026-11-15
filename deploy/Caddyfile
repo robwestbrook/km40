@@ -1,0 +1,12 @@
+# KM40's site block, as it appears in /etc/caddy/Caddyfile on the shared Linode server.
+# That file also serves the sermon site, LifeApp and Forward Church, so this block is
+# appended to it by hand. Do not copy this file over /etc/caddy/Caddyfile: that would
+# remove the other sites.
+#
+# Add it only after the DNS A record for weather.mylifeapp.website resolves to the
+# server; until then Caddy cannot get a certificate for it.
+weather.mylifeapp.website {
+    reverse_proxy 127.0.0.1:8082
+    encode gzip
+    header Strict-Transport-Security "max-age=63072000"
+}
