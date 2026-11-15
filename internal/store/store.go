@@ -74,7 +74,6 @@ type Series struct {
 	HasData        bool      `json:"hasData"`
 	Min            float64   `json:"min"`
 	Max            float64   `json:"max"`
-	Avg            float64   `json:"avg"`
 	MinAt          time.Time `json:"minAt"`
 	MaxAt          time.Time `json:"maxAt"`
 	RecordHigh     float64   `json:"recordHigh"`
@@ -133,7 +132,9 @@ func Open(path string) (*Store, error) {
 			altimeter_inhg REAL, precip_in REAL, sky_cover REAL)`,
 		`CREATE TABLE IF NOT EXISTS backfill (ym TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)`,
-		`CREATE INDEX IF NOT EXISTS observations_cols ON observations (obs_time)`,
+		// obs_time is the INTEGER PRIMARY KEY (the rowid), so it needs no index;
+		// older databases carry a redundant one.
+		`DROP INDEX IF EXISTS observations_cols`,
 		// Months marked before the IEM end-date fix are missing their last day.
 		// Clear the marks once so the next backfill refetches them.
 		`DELETE FROM backfill WHERE NOT EXISTS (SELECT 1 FROM cache WHERE key = 'backfill_end_exclusive')`,
@@ -342,25 +343,20 @@ func (s *Store) RefreshRecords(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		m := map[string]map[string]daily{}
-		for date, h := range highs {
-			day := date[5:]
-			if m[day] == nil {
-				m[day] = map[string]daily{}
+		m := map[string]map[string]daily{} // "MM-DD" -> "YYYY-MM-DD" -> that day
+		merge := func(extremes map[string]extreme, set func(*daily, extreme)) {
+			for date, x := range extremes {
+				day := date[5:]
+				if m[day] == nil {
+					m[day] = map[string]daily{}
+				}
+				d := m[day][date]
+				set(&d, x)
+				m[day][date] = d
 			}
-			d := m[day][date]
-			d.High, d.AtHigh = h.v, h.at
-			m[day][date] = d
 		}
-		for date, l := range lows {
-			day := date[5:]
-			if m[day] == nil {
-				m[day] = map[string]daily{}
-			}
-			d := m[day][date]
-			d.Low, d.AtLow = l.v, l.at
-			m[day][date] = d
-		}
+		merge(highs, func(d *daily, x extreme) { d.High, d.AtHigh = x.v, x.at })
+		merge(lows, func(d *daily, x extreme) { d.Low, d.AtLow = x.v, x.at })
 		recs[e.Key] = m
 	}
 	s.mu.Lock()
@@ -445,15 +441,14 @@ func (s *Store) Series(ctx context.Context, key string, from, to time.Time, poin
 		return s.circularSeries(ctx, e, from, to, bucket)
 	}
 
-	agg := e.agg
-	if agg == "min" {
+	agg := "AVG"
+	switch e.agg {
+	case "min":
 		agg = "MIN"
-	} else if agg == "max" {
+	case "max":
 		agg = "MAX"
-	} else if agg == "sum" {
+	case "sum":
 		agg = "SUM"
-	} else {
-		agg = "AVG"
 	}
 	q := fmt.Sprintf(`SELECT (obs_time/?)*? b, %s(%s) v, COUNT(%s)
 		FROM observations
@@ -466,7 +461,6 @@ func (s *Store) Series(ctx context.Context, key string, from, to time.Time, poin
 	defer rows.Close()
 
 	out := Series{Element: e.Key, Unit: e.Unit, Precision: e.Precision, Aggregate: e.agg, Points: []Point{}}
-	var sum float64
 	for rows.Next() {
 		var b, n int64
 		var v float64
@@ -486,17 +480,9 @@ func (s *Store) Series(ctx context.Context, key string, from, to time.Time, poin
 		if len(out.Points) == 1 || v > out.Max {
 			out.Max, out.MaxAt = v, p.T
 		}
-		sum += v
 	}
 	if err := rows.Err(); err != nil {
 		return Series{}, err
-	}
-	if len(out.Points) > 0 {
-		out.Avg = sum / float64(len(out.Points))
-	}
-	if agg == "SUM" {
-		// Summed points are per-bucket totals; the window total is their sum.
-		out.Avg = sum
 	}
 
 	// Bucketed values are averages, so their extremes understate a long

@@ -77,6 +77,19 @@ func TestParseFractionalVisibility(t *testing.T) {
 	}
 }
 
+// A zero denominator is malformed; it must not store an infinite visibility.
+func TestParseZeroDenominatorVisibility(t *testing.T) {
+	for _, raw := range []string{
+		"KM40 150115Z 00000KT 1/0SM CLR 04/00 A3028",
+		"KM40 150115Z 00000KT M1/0SM CLR 04/00 A3028",
+	} {
+		o, _ := Parse(raw, now)
+		if o.VisSM != nil {
+			t.Errorf("%q: vis = %v, want unset", raw, *o.VisSM)
+		}
+	}
+}
+
 func TestParseMissingElements(t *testing.T) {
 	o, err := Parse("KM40 150115Z AUTO 00000KT 10SM CLR 04/ A3028", now)
 	if err != nil {

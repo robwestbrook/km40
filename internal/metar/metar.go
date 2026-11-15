@@ -91,13 +91,13 @@ func Parse(raw string, now time.Time) (Obs, error) {
 		switch {
 		case tok == "AUTO" || tok == "COR" || tok == "NIL":
 		case tok == "CAVOK":
-			o.VisSM = p(6.2)
+			o.VisSM = new(6.2)
 			sky = append(sky, "CAVOK")
 		case windRe.MatchString(tok):
 			windSeen = true
 			m := windRe.FindStringSubmatch(tok)
 			spd, _ := strconv.Atoi(m[2])
-			o.WindKt = p(float64(spd))
+			o.WindKt = new(float64(spd))
 			if m[1] != "VRB" && spd > 0 {
 				if dir, err := strconv.Atoi(m[1]); err == nil {
 					o.WindDir = &dir
@@ -105,36 +105,37 @@ func Parse(raw string, now time.Time) (Obs, error) {
 			}
 			if m[3] != "" {
 				g, _ := strconv.Atoi(m[3])
-				o.GustKt = p(float64(g))
+				o.GustKt = new(float64(g))
 			}
 		case wholeVisRe.MatchString(tok) && !isSky(tok):
 			m := wholeVisRe.FindStringSubmatch(tok)
 			v, _ := strconv.ParseFloat(m[1], 64)
-			o.VisSM = p(v)
+			o.VisSM = new(v)
 		case fracVisRe.MatchString(tok):
 			m := fracVisRe.FindStringSubmatch(tok)
-			num, _ := strconv.ParseFloat("0"+m[1], 64)
-			den, _ := strconv.ParseFloat(m[2], 64)
-			v := num / den
+			v, ok := fraction(m[1], m[2])
+			if !ok {
+				break
+			}
 			if j > 0 {
 				if whole, err := strconv.ParseFloat(body[j-1], 64); err == nil && whole < 10 {
 					v += whole // "1 1/2SM"
 				}
 			}
-			o.VisSM = p(v)
+			o.VisSM = new(v)
 		case strings.HasPrefix(tok, "M") && fracVisRe.MatchString(tok[1:]):
 			m := fracVisRe.FindStringSubmatch(tok[1:])
-			num, _ := strconv.ParseFloat("0"+m[1], 64)
-			den, _ := strconv.ParseFloat(m[2], 64)
-			o.VisSM = p(num / den)
+			if v, ok := fraction(m[1], m[2]); ok {
+				o.VisSM = new(v)
+			}
 		case strings.HasPrefix(tok, "P") && wholeVisRe.MatchString(tok[1:]):
 			m := wholeVisRe.FindStringSubmatch(tok[1:])
 			v, _ := strconv.ParseFloat(m[1], 64)
-			o.VisSM = p(v)
+			o.VisSM = new(v)
 		case metersRe.MatchString(tok):
 			// 4-digit metres visibility (ICAO style), e.g. 9999.
 			if m, err := strconv.Atoi(tok); err == nil && m > 0 {
-				o.VisSM = p(float64(m) / 1609.344)
+				o.VisSM = new(float64(m) / 1609.344)
 			}
 		case skyRe.MatchString(tok):
 			sky = append(sky, tok)
@@ -150,18 +151,18 @@ func Parse(raw string, now time.Time) (Obs, error) {
 			sky = append(sky, tok)
 		case tempRe.MatchString(tok):
 			m := tempRe.FindStringSubmatch(tok)
-			o.TempC = p(signed(m[1]))
+			o.TempC = new(signed(m[1]))
 			if m[2] != "" {
-				o.DewpointC = p(signed(m[2]))
+				o.DewpointC = new(signed(m[2]))
 			}
 		case altRe.MatchString(tok):
 			m := altRe.FindStringSubmatch(tok)
 			v, _ := strconv.ParseFloat(m[1], 64)
-			o.AltimeterInHg = p(v / 100)
+			o.AltimeterInHg = new(v / 100)
 		case qnhRe.MatchString(tok):
 			m := qnhRe.FindStringSubmatch(tok)
 			v, _ := strconv.ParseFloat(m[1], 64)
-			o.AltimeterInHg = p(v * 0.0295299830714)
+			o.AltimeterInHg = new(v * 0.0295299830714)
 		case wxRe.MatchString(tok):
 			o.Wx = strings.TrimSpace(o.Wx + " " + tok)
 		}
@@ -173,19 +174,19 @@ func Parse(raw string, now time.Time) (Obs, error) {
 	}
 	if !windSeen {
 		// An omitted wind group means calm; a masked group stays unknown.
-		o.WindKt = p(0)
+		o.WindKt = new(0.0)
 	}
 	o.Sky = strings.Join(sky, " ")
 
 	for _, tok := range remarks {
 		if m := precipRe.FindStringSubmatch(tok); m != nil {
 			v, _ := strconv.ParseFloat(m[1], 64)
-			o.PrecipIn = p(v / 100)
+			o.PrecipIn = new(v / 100)
 		}
 		if m := tGroupRe.FindStringSubmatch(tok); m != nil {
 			// Tenths of a degree; more precise than the whole-degree group.
-			o.TempC = p(tenths(m[1]))
-			o.DewpointC = p(tenths(m[2]))
+			o.TempC = new(tenths(m[1]))
+			o.DewpointC = new(tenths(m[2]))
 		}
 	}
 	return o, nil
@@ -266,7 +267,20 @@ func tenths(s string) float64 {
 	return float64(v) / 10
 }
 
-func p(v float64) *float64 { return &v }
+// fraction reads a visibility fraction such as "1/4". The numerator group is
+// optional in the pattern (empty counts as 0); ok is false for a zero
+// denominator, which would otherwise store an infinite visibility.
+func fraction(num, den string) (v float64, ok bool) {
+	n := 0.0
+	if num != "" {
+		n, _ = strconv.ParseFloat(num, 64)
+	}
+	d, _ := strconv.ParseFloat(den, 64)
+	if d == 0 {
+		return 0, false
+	}
+	return n / d, true
+}
 
 func parseTimeToken(tok string, now time.Time) (time.Time, bool) {
 	if len(tok) != 7 || tok[6] != 'Z' {

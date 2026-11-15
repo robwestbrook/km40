@@ -53,15 +53,33 @@ type Current struct {
 	PrecipIn      *float64 `json:"precipIn"`
 }
 
+// Observation is the latest report: when, how old, the raw text and the
+// decoded values. All fields are empty when nothing is stored yet.
+type Observation struct {
+	ObservedAt string  `json:"observedAt"`
+	AgeMinutes int     `json:"ageMinutes"`
+	Raw        string  `json:"raw"`
+	Current    Current `json:"current"`
+}
+
+func observationOf(latest *metar.Obs) Observation {
+	if latest == nil {
+		return Observation{}
+	}
+	return Observation{
+		ObservedAt: latest.Time.Format(time.RFC3339),
+		AgeMinutes: int(time.Since(latest.Time).Minutes()),
+		Raw:        latest.Raw,
+		Current:    currentOf(latest),
+	}
+}
+
 type Summary struct {
-	Station    Station        `json:"station"`
-	ObservedAt string         `json:"observedAt"`
-	AgeMinutes int            `json:"ageMinutes"`
-	Raw        string         `json:"raw"`
-	Current    Current        `json:"current"`
-	From       string         `json:"from"`
-	To         string         `json:"to"`
-	Elements   []store.Series `json:"elements"`
+	Station Station `json:"station"`
+	Observation
+	From     string         `json:"from"`
+	To       string         `json:"to"`
+	Elements []store.Series `json:"elements"`
 }
 
 type Status struct {
@@ -98,12 +116,7 @@ func New(st *store.Store, static fs.FS, health HealthSource) http.Handler {
 			httpErr(w, err)
 			return
 		}
-		if latest != nil {
-			out.ObservedAt = latest.Time.Format(time.RFC3339)
-			out.AgeMinutes = int(time.Since(latest.Time).Minutes())
-			out.Raw = latest.Raw
-			out.Current = currentOf(latest)
-		}
+		out.Observation = observationOf(latest)
 		// One query per element; run them together so a wide window does not
 		// multiply the wait by nine.
 		els := store.Elements()
@@ -156,24 +169,12 @@ func New(st *store.Store, static fs.FS, health HealthSource) http.Handler {
 	})
 
 	mux.HandleFunc("GET /api/latest", func(w http.ResponseWriter, r *http.Request) {
-		out := struct {
-			ObservedAt string  `json:"observedAt"`
-			AgeMinutes int     `json:"ageMinutes"`
-			Raw        string  `json:"raw"`
-			Current    Current `json:"current"`
-		}{}
 		latest, err := st.Latest(r.Context())
 		if err != nil {
 			httpErr(w, err)
 			return
 		}
-		if latest != nil {
-			out.ObservedAt = latest.Time.Format(time.RFC3339)
-			out.AgeMinutes = int(time.Since(latest.Time).Minutes())
-			out.Raw = latest.Raw
-			out.Current = currentOf(latest)
-		}
-		writeJSON(w, out)
+		writeJSON(w, observationOf(latest))
 	})
 
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
