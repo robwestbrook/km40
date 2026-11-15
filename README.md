@@ -52,8 +52,17 @@ internal/store/         SQLite schema, upserts, bucketed series, records
 internal/ingest/        IEM month backfill + AWC live poller
 internal/api/           JSON endpoints and static serving with SPA fallback
 web/                    SvelteKit app
+web/static/             web app manifest and home-screen icons (copied into the build as is)
+tools/                  helper scripts; make-icons.py regenerates web/static icons
 docs/superpowers/       design and plan
 ```
+
+## Install on a phone
+
+The dashboard is an installable web app. On an iPhone, open the site in Safari,
+tap Share, then Add to Home Screen; it then opens full-screen like an app. There
+is deliberately no service worker: the data is live, and a cache would only risk
+showing stale weather.
 
 ## Notes
 
