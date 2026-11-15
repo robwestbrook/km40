@@ -1,0 +1,7 @@
+/km40
+*.db
+*.db-wal
+*.db-shm
+/web/node_modules
+/web/build
+/web/.svelte-kit
