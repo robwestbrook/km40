@@ -100,38 +100,74 @@ export function sentence(current) {
 			parts.push(`${dir ? dir + ' ' : ''}${fmt(current.windKt, 'wind')} ${unit('wind')}`);
 		}
 	}
-	if (current.gustKt) parts.push(`gusting ${fmt(current.gustKt, 'gust')}`);
+	if (current.gustKt) parts.push(`gusting ${fmt(current.gustKt, 'gust')} ${unit('gust')}`);
 	return parts.join(' · ');
 }
 
-const WX = {
+// METAR present-weather codes. Descriptors modify a phenomenon ("blowing snow");
+// TS and SH are handled separately because they read as phrases.
+const DESCRIPTOR = {
+	MI: 'shallow',
+	BC: 'patchy',
+	PR: 'partial',
+	DR: 'low drifting',
+	BL: 'blowing',
+	FZ: 'freezing'
+};
+
+const PHENOMENON = {
 	RA: 'rain',
 	SN: 'snow',
 	DZ: 'drizzle',
-	TS: 'thunderstorm',
-	BR: 'mist',
-	FG: 'fog',
-	HZ: 'haze',
-	SH: 'showers',
-	FZ: 'freezing',
+	SG: 'snow grains',
+	IC: 'ice crystals',
+	PL: 'ice pellets',
 	GR: 'hail',
 	GS: 'small hail',
 	UP: 'unknown precipitation',
-	PL: 'ice pellets',
-	IC: 'ice crystals',
-	SQ: 'squalls'
+	BR: 'mist',
+	FG: 'fog',
+	FU: 'smoke',
+	VA: 'volcanic ash',
+	DU: 'dust',
+	SA: 'sand',
+	HZ: 'haze',
+	PY: 'spray',
+	PO: 'dust whirls',
+	SQ: 'squalls',
+	FC: 'funnel cloud',
+	SS: 'sandstorm',
+	DS: 'duststorm'
 };
 
-function weatherText(wx) {
-	const intensity = wx.startsWith('-') ? 'Light ' : wx.startsWith('+') ? 'Heavy ' : '';
-	const words = [];
-	for (let i = 0; i < wx.length; i += 2) {
-		const code = wx.slice(i, i + 2).replace(/[+-]/, '');
-		if (!code.trim()) continue;
-		words.push(WX[code] ?? code);
+// One group such as "-SHRA", "+TSRA", "VCSH" or "FZFG" -> "light rain showers".
+// A group that does not match the grammar is returned unchanged, never dropped.
+function weatherGroup(tok) {
+	const m = /^([+-])?(VC)?((?:[A-Z]{2})+)$/.exec(tok);
+	if (!m) return tok;
+	let thunder = false;
+	let showers = false;
+	const descriptors = [];
+	const phenomena = [];
+	for (const code of m[3].match(/../g)) {
+		if (code === 'TS') thunder = true;
+		else if (code === 'SH') showers = true;
+		else if (DESCRIPTOR[code]) descriptors.push(DESCRIPTOR[code]);
+		else if (PHENOMENON[code]) phenomena.push(PHENOMENON[code]);
+		else return tok; // an unknown code: show the group as reported
 	}
-	const text = words.join(' ');
-	return intensity + (text || wx);
+	let core = phenomena.join(' and ');
+	if (showers) core = core ? `${core} showers` : 'showers';
+	core = [...descriptors, core].filter(Boolean).join(' ');
+	if (thunder) core = core ? `thunderstorm with ${core}` : 'thunderstorm';
+	if (!core) return tok;
+	const intensity = m[1] === '-' ? 'light ' : m[1] === '+' ? 'heavy ' : '';
+	return `${intensity}${core}${m[2] ? ' in the vicinity' : ''}`;
+}
+
+function weatherText(wx) {
+	const text = wx.trim().split(/\s+/).map(weatherGroup).join(', ');
+	return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function skyText(sky) {
