@@ -9,7 +9,6 @@
 	let error = '';
 	let from = '';
 	let to = '';
-	let points = 96;
 	let loading = false;
 
 	$: span = windowHours(from, to);
@@ -29,7 +28,6 @@
 			if (to) q.set('to', to);
 			q.set('points', String(budget()));
 			summary = await getJSON(`/api/summary?${q}`);
-			points = budget();
 		} catch (e) {
 			error = String(e.message ?? e);
 		} finally {

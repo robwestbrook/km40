@@ -30,7 +30,7 @@ async function main() {
 	send('Page.navigate', { url: process.argv[2] });
 	await new Promise((r) => setTimeout(r, 9000));
 	const reqId = ++id;
-	ws.send(JSON.stringify({ id: reqId, method: 'Runtime.evaluate', params: { expression: 'JSON.stringify(window.__km40 ? window.__km40() : "no-hook")', returnByValue: true } }));
+	ws.send(JSON.stringify({ id: reqId, method: 'Runtime.evaluate', params: { expression: 'document.body.innerText.slice(0, 2000)', returnByValue: true } }));
 	const text = await new Promise((resolve) => {
 		const handler = (ev) => {
 			const m = JSON.parse(ev.data);

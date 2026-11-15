@@ -86,10 +86,23 @@ export function bearingText(deg) {
 	return `${compass(deg)} ${Math.round(deg) % 360}°`;
 }
 
+// The station's time zone: every displayed time and calendar day uses it.
+export const TIMEZONE = 'America/Chicago';
+
+// First day with stored data (the IEM archive starts here), as a date-only
+// string, and the same day as it reads in the page footers.
+export const ARCHIVE_START = '2012-01-11';
+export const ARCHIVE_SINCE = new Date(`${ARCHIVE_START}T12:00:00Z`).toLocaleDateString('en-GB', {
+	timeZone: 'UTC',
+	day: 'numeric',
+	month: 'short',
+	year: 'numeric'
+});
+
 export function localTime(iso) {
 	if (!iso) return '—';
 	return new Date(iso).toLocaleString('en-US', {
-		timeZone: 'America/Chicago',
+		timeZone: TIMEZONE,
 		month: 'short',
 		day: 'numeric',
 		hour: 'numeric',
@@ -106,7 +119,7 @@ export function presetRange(preset, now) {
 	else if (preset === '7d') start.setTime(now.getTime() - 7 * 86400e3);
 	else if (preset === '30d') start.setTime(now.getTime() - 30 * 86400e3);
 	else if (preset === '1y') start.setDate(now.getDate() - 365);
-	else if (preset === 'all') start.setTime(Date.UTC(2012, 0, 11));
+	else if (preset === 'all') start.setTime(Date.parse(ARCHIVE_START));
 	else return null;
 	return { from: start.toISOString(), to: now.toISOString() };
 }
@@ -129,13 +142,13 @@ export function calendarDay(s) {
 		const [y, m, d] = s.split('-');
 		return `${+m}/${+d}/${y}`;
 	}
-	return new Date(s).toLocaleDateString('en-US', { timeZone: 'America/Chicago' });
+	return new Date(s).toLocaleDateString('en-US', { timeZone: TIMEZONE });
 }
 
 export function clockTime(iso) {
 	if (!iso) return '—';
 	return new Date(iso).toLocaleTimeString('en-US', {
-		timeZone: 'America/Chicago',
+		timeZone: TIMEZONE,
 		hour: 'numeric',
 		minute: '2-digit'
 	});

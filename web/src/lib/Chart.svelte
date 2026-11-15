@@ -1,7 +1,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import Chart from 'chart.js/auto';
-	import { convert, unit, isCircular, bearingText, rangeOf } from './units.js';
+	import { convert, unit, isCircular, bearingText, rangeOf, TIMEZONE } from './units.js';
 
 	export let points = [];
 	export let name = 'temp';
@@ -14,19 +14,19 @@
 
 	const narrow = (iso) =>
 		new Date(iso).toLocaleTimeString('en-US', {
-			timeZone: 'America/Chicago',
+			timeZone: TIMEZONE,
 			hour: 'numeric',
 			minute: '2-digit'
 		});
 	const shortDate = (iso) =>
 		new Date(iso).toLocaleDateString('en-US', {
-			timeZone: 'America/Chicago',
+			timeZone: TIMEZONE,
 			month: 'short',
 			day: 'numeric'
 		});
 	const monthYear = (iso) =>
 		new Date(iso).toLocaleDateString('en-US', {
-			timeZone: 'America/Chicago',
+			timeZone: TIMEZONE,
 			month: 'short',
 			year: 'numeric'
 		});

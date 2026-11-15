@@ -107,7 +107,7 @@ func Parse(raw string, now time.Time) (Obs, error) {
 				g, _ := strconv.Atoi(m[3])
 				o.GustKt = new(float64(g))
 			}
-		case wholeVisRe.MatchString(tok) && !isSky(tok):
+		case wholeVisRe.MatchString(tok) && !skyRe.MatchString(tok):
 			m := wholeVisRe.FindStringSubmatch(tok)
 			v, _ := strconv.ParseFloat(m[1], 64)
 			o.VisSM = new(v)
@@ -191,8 +191,6 @@ func Parse(raw string, now time.Time) (Obs, error) {
 	}
 	return o, nil
 }
-
-func isSky(tok string) bool { return skyRe.MatchString(tok) }
 
 // skyCoverPct is the share of sky each cover amount stands for: the midpoint
 // of its oktas range (FEW 1-2, SCT 3-4, BKN 5-7, OVC 8).

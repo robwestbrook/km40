@@ -1,5 +1,5 @@
 <script>
-	import { presetRange } from '$lib/units.js';
+	import { presetRange, ARCHIVE_START } from '$lib/units.js';
 
 	export let from = '';
 	export let to = '';
@@ -31,10 +31,11 @@
 		onchange(from, to, active);
 	}
 
-	function custom(event) {
-		const f = document.getElementById('from-date').value;
-		const t = document.getElementById('to-date').value;
-		if (f && t) apply('custom', f, t);
+	// Read the inputs directly: a bound value is stale until the next update.
+	let fromInput;
+	let toInput;
+	function custom() {
+		if (fromInput.value && toInput.value) apply('custom', fromInput.value, toInput.value);
 	}
 </script>
 
@@ -54,16 +55,16 @@
 	{/each}
 	<span class="mx-1 h-4 w-px bg-slate-800"></span>
 	<input
-		id="from-date"
+		bind:this={fromInput}
 		type="date"
-		min="2012-01-11"
+		min={ARCHIVE_START}
 		aria-label="From date"
 		class="rounded-md bg-slate-800/60 px-2 py-1 text-xs text-slate-300 outline-none focus:ring-1 focus:ring-sky-400/50"
 		on:change={custom}
 	/>
 	<span class="text-xs text-slate-500">to</span>
 	<input
-		id="to-date"
+		bind:this={toInput}
 		type="date"
 		aria-label="To date"
 		class="rounded-md bg-slate-800/60 px-2 py-1 text-xs text-slate-300 outline-none focus:ring-1 focus:ring-sky-400/50"

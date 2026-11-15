@@ -3,7 +3,7 @@
 	import Chart from '$lib/Chart.svelte';
 	import Window from '$lib/Window.svelte';
 	import { getJSON } from '$lib/api.js';
-	import { fmt, unit, localTime, ELEMENTS, compass, windowHours, calendarDay, currentValue, isCircular, prevailingText } from '$lib/units.js';
+	import { fmt, unit, localTime, ELEMENTS, compass, windowHours, calendarDay, currentValue, isCircular, prevailingText, ARCHIVE_SINCE } from '$lib/units.js';
 
 	let latest = null;
 	let stats = null;
@@ -69,7 +69,7 @@
 	<div class="mt-2 flex flex-wrap items-end justify-between gap-3">
 		<div>
 			<h1 class="text-2xl font-semibold text-slate-100">{meta.label}</h1>
-			<p class="text-xs text-slate-500">KM40 · records since 11 Jan 2012 · times local</p>
+			<p class="text-xs text-slate-500">KM40 · records since {ARCHIVE_SINCE} · times local</p>
 		</div>
 		<div class="text-right">
 			<p class="text-3xl font-semibold text-slate-50">

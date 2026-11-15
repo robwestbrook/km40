@@ -1,7 +1,7 @@
 // Run with: npm --prefix web test   (Node's built-in runner, no extra dependency)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sentence, presetRange, currentValue, isCircular, bearingText, prevailingText, rangeOf, ELEMENTS } from './units.js';
+import { sentence, presetRange, currentValue, isCircular, bearingText, prevailingText, rangeOf, ELEMENTS, ARCHIVE_START, ARCHIVE_SINCE } from './units.js';
 
 const obs = (extra) => ({ tempC: 20, windKt: 0, ...extra });
 const lead = (weather) => sentence(obs({ weather })).split(' · ')[0];
@@ -54,6 +54,12 @@ test('presetRange is relative to the time it is asked for', () => {
 	assert.equal(presetRange('7d', t1).from, '2026-11-08T12:00:00.000Z');
 	assert.equal(presetRange('30d', t1).from, '2026-10-16T12:00:00.000Z');
 	assert.equal(presetRange('all', t1).from, '2012-01-11T00:00:00.000Z');
+});
+
+// The footers derive their text from the archive start instead of repeating it.
+test('the archive start reads as a date in the page footers', () => {
+	assert.equal(ARCHIVE_START, '2012-01-11');
+	assert.equal(ARCHIVE_SINCE, '11 Jan 2012');
 });
 
 // One place maps an element key to its current value, for both pages.
