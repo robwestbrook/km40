@@ -2,7 +2,7 @@
 
 - **Written:** 2026-11-15 13:59 CST (19:59 UTC)
 - **Session scope:** Review the code, fix the review findings in a worktree, close three spec gaps, clean up, merge to `main`, and deploy to the user's Linode as https://weather.mylifeapp.website.
-- **Branch / last commit:** `main`; the newest commit is the handoff commit made right after this file was written (see `git log`). The last *code* commit is `77cc31a` "Add deployment to the shared Linode as weather.mylifeapp.website". **Not pushed**: `origin/main` is at `8a22df3`, so `main` is 12 commits ahead including the handoff commit.
+- **Branch / last commit:** `main`; the newest commit is this file's push-status correction, after the handoff commit `3fd5c3e` (see `git log`). The last *code* commit is `77cc31a` "Add deployment to the shared Linode as weather.mylifeapp.website". **Pushed** to `origin/main` at the user's request ("Push"; `8a22df3..3fd5c3e`), and a follow-up commit correcting this file was pushed the same way; `main` and `origin/main` should be level.
 - **Working tree:** clean after the handoff commit
 - **Handoff status:** complete. Nothing is mid-flight.
 
@@ -14,8 +14,8 @@ https://weather.mylifeapp.website** on the shared Linode (`bps`, 173.255.193.174
 systemd service `km40` on `127.0.0.1:8082`. The server ingests live data itself; **production is the
 source of truth for data now** (the local `km40.db` is a stale seed). All review fixes, the three spec
 gaps (sky cover, wind direction, `/api/status` ingest health) and the cleanup pass are merged on `main`
-but **not pushed to GitHub** (the user said "Commit, don't push"). No product work is pending; the next actions are the user's choice (see
-"Decisions awaiting the user"). Do not push, and do not touch the other apps on the server, without being asked.
+and **pushed to GitHub** (the user said "Push" after first saying "Commit, don't push"). No product work is pending; the next actions are
+the user's choice (see "Decisions awaiting the user"). Do not push again, and do not touch the other apps on the server, without being asked.
 
 ## Standing rules from the user
 
@@ -30,7 +30,9 @@ Carried over from the first session (still in force):
 - **Non-goals, not to be added unasked:** forecasts, radar, satellite, alerts, webcams, multi-station,
   accounts, sharing, mobile apps, official climate products. [project doc: design]
 - **`km40.db` and the built binary stay untracked.** [my inference from `.gitignore`]
-- **Git only as asked:** the user has asked for commits and a fast-forward merge this session, **never a push**.
+- **Git only as asked:** the user asked for commits and a fast-forward merge this session, and for pushes only twice, each time
+  explicitly: "Push", then "Yes, fix the handoff and commit it, and push". Each push approval covered that push only; push again
+  only when asked. [said this session]
   Every commit ends with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` and
   `Claude-Session: https://claude.ai/code/session_019zCdTpzQsRfpsAWJf6Pia7`. [harness attribution reminder]
 
@@ -54,7 +56,7 @@ Said this session (each approval is scoped to what it names):
   'weather' ... Caddy is used on the server." Answers: seed with **"Upload local DB (Recommended)"**; deploy files:
   **"Yes, commit to main (Recommended)"** (commit only, no push). Then "weather A Record added." (done by the user in Namecheap).
 
-**Not granted:** pushing to origin; changing the other apps (`bps`, `lifeapp`, Forward Church) or their repos
+**Not granted:** pushes beyond the two named above; changing the other apps (`bps`, `lifeapp`, Forward Church) or their repos
 (read only); any server change beyond the km40 user and directories, the `km40` service and the one Caddy block;
 anything beyond the single handoff commit described under "Exact stopping point".
 
@@ -65,17 +67,17 @@ succeeded, the `weather.mylifeapp.website` Caddy block was added and reloaded, a
 (certificate, gzip, HSTS, `/api/status`, `/api/summary`, the home page; the other sites still answered 200). The
 previous handoff was archived to `handoffs/HANDOFF-2026-11-15-1359.md`. At the end the user answered "Save both to tools/"
 (two session scripts, now in `tools/`) and "Commit, don't push" (this handoff, `handoffs/` and those scripts were committed
-to `main` in one commit; nothing pushed). Nothing is uncommitted after that commit.
+to `main` in one commit, `3fd5c3e`). The user then said "Push" (done: `8a22df3..3fd5c3e`) and, on being told the handoff
+now had stale push statements, "Yes, fix the handoff and commit it, and push" (this correction; committed and pushed as a follow-up).
 
 ## Decisions awaiting the user
 
-1. **Push `main` to origin?** 12 commits: the 11 from `c439d18` to `77cc31a` plus the handoff commit. Not blocking anything. Never done unasked.
-2. **Long-range chart line vs labeled extremes** (open since the first session): charts plot bucket averages while
+1. **Long-range chart line vs labeled extremes** (open since the first session): charts plot bucket averages while
    "Window low/high" come from raw observations, so a 14-year temperature chart looks inconsistent with its labels.
    A min/max band would fix it. Recommended if it confuses; not requested.
-3. **Precipitation record semantics** (open since the first session): `precip` records use per-bucket sums, so "record low"
+2. **Precipitation record semantics** (open since the first session): `precip` records use per-bucket sums, so "record low"
    is nearly meaningless. The user chose to **keep the element**; how its records should read is still undecided.
-4. **Disk tidy:** `km40.pre-review-fixes.db` (56 MB, gitignored) is the pre-migration backup of the real DB; the old
+3. **Disk tidy:** `km40.pre-review-fixes.db` (56 MB, gitignored) is the pre-migration backup of the real DB; the old
    scratchpad copy and test binaries also exist. Delete when the user is satisfied. Not decided.
 
 ## Next steps
@@ -84,14 +86,13 @@ to `main` in one commit; nothing pushed). Nothing is uncommitted after that comm
 
 **Proposed, needs the user's go-ahead:**
 
-1. Push `main` (decision 1).
-2. Min/max chart band for ranges over a day (decision 2). Touches `internal/store/store.go` and `web/src/lib/Chart.svelte`.
-3. Remaining review leftovers, deliberately not done: `store.elements` duplicated in `web/src/lib/units.js` `ELEMENTS`
+1. Min/max chart band for ranges over a day (decision 1). Touches `internal/store/store.go` and `web/src/lib/Chart.svelte`.
+2. Remaining review leftovers, deliberately not done: `store.elements` duplicated in `web/src/lib/units.js` `ELEMENTS`
    (merging needs an API field or build step); `Station` lat/lon/elevation served but unused by the UI (removing changes
    the API); `Series` computes Min/Max in the loop for every element but only precipitation needs it.
-4. Known visual flaws that pre-date this session: altimeter chart y-axis float noise (`30.400000000000006`);
+3. Known visual flaws that pre-date this session: altimeter chart y-axis float noise (`30.400000000000006`);
    duplicate x-axis date labels in the 7-day view.
-5. Future updates ship with `deploy/deploy.sh` from a clean tree.
+4. Future updates ship with `deploy/deploy.sh` from a clean tree (and, only if the user asks, `git push`).
 
 ## What happened this session
 
@@ -134,7 +135,7 @@ to `main` in one commit; nothing pushed). Nothing is uncommitted after that comm
   deploy with `--seed-db` did. `/var/lib/km40/backups` does not exist yet.
 - Why precipitation has no data in any window checked (2018-19, 2024): unverified; the archive METARs may not carry it.
 
-**Not started:** push to GitHub; chart band; precipitation record semantics; deployment automation beyond `deploy.sh`
+**Not started:** chart band; precipitation record semantics; deployment automation beyond `deploy.sh`
 (no monitoring or alerting).
 
 ## File map
@@ -195,8 +196,8 @@ Server layout: binary `/opt/km40/releases/<release>/km40` (live one via `/opt/km
 ```sh
 cd /mnt/ydrive/km40
 git status --short                 # expect clean
-git log --oneline -3               # expect the handoff commit, then 77cc31a, 0ef62ce
-git rev-parse --short origin/main  # expect 8a22df3 (main is 12 ahead until pushed)
+git log --oneline -3               # expect the handoff correction, then 3fd5c3e (handoff), 77cc31a (deploy)
+git fetch origin && git rev-list --count origin/main..main   # expect 0 (everything is pushed)
 go vet ./... && go test -count=1 ./...   # expect 4 ok packages
 npm --prefix web test              # expect 15 pass
 pgrep -x km40 || echo none         # expect none locally
