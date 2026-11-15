@@ -12,4 +12,8 @@ body {
 		radial-gradient(1200px 600px at 50% -10%, #10203a 0%, transparent 60%),
 		#070b14;
 	min-height: 100vh;
+	/* Installed to the home screen the page runs under the status bar and
+	   home indicator; keep content clear of them (0 in a normal browser tab). */
+	padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+		env(safe-area-inset-left);
 }

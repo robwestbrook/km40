@@ -315,3 +315,26 @@ func TestStaticAndSPAFallback(t *testing.T) {
 func timeFromNow(minutes int) (t time.Time) {
 	return time.Now().UTC().Add(time.Duration(minutes) * time.Minute)
 }
+
+// The web app manifest must be served as a manifest, not sniffed as text, and
+// must not fall through to the SPA shell. The MIME type is registered in code
+// because the host's MIME table may not know .webmanifest.
+func TestStaticServesWebManifest(t *testing.T) {
+	h := staticHandler(fstest.MapFS{
+		"200.html":             {Data: []byte("<html>shell</html>")},
+		"manifest.webmanifest": {Data: []byte(`{"name":"KM40"}`)},
+		"apple-touch-icon.png": {Data: []byte("png")},
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/manifest.webmanifest", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/manifest+json") {
+		t.Errorf("Content-Type = %q, want application/manifest+json", got)
+	}
+	if body := rec.Body.String(); body != `{"name":"KM40"}` {
+		t.Errorf("body = %q, want the manifest, not the SPA shell", body)
+	}
+}

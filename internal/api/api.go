@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"mime"
 	"net/http"
 	"path"
 	"strconv"
@@ -303,6 +304,9 @@ func httpErr(w http.ResponseWriter, err error) {
 // staticHandler serves the SvelteKit build, falling back to the SPA shell so
 // client-side routes such as /element/temp work on a hard refresh.
 func staticHandler(fsys fs.FS) http.Handler {
+	// The web app manifest lets the dashboard be installed on a phone. Go's
+	// built-in MIME table lacks .webmanifest and the host's may too.
+	mime.AddExtensionType(".webmanifest", "application/manifest+json")
 	files := http.FileServer(http.FS(fsys))
 	shell := "200.html"
 	if _, err := fs.Stat(fsys, shell); err != nil {
