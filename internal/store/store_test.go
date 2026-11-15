@@ -245,3 +245,44 @@ func TestRecordTiesPickEarliestDate(t *testing.T) {
 		t.Errorf("tied records = %s / %s, want the earliest date", ser.RecordHighDate, ser.RecordLowDate)
 	}
 }
+
+// Months marked before the IEM end-date fix are missing their last day, so
+// the first Open after the fix clears the marks once and only once.
+func TestOpenClearsStaleBackfillMarksOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "m.db")
+	ctx := context.Background()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkMonth(ctx, "2020-01"); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a database written before the fix: marks exist, no migration flag.
+	if _, err := s.db.Exec(`DELETE FROM cache WHERE key = 'backfill_end_exclusive'`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done, _ := s.MonthDone(ctx, "2020-01"); done {
+		t.Error("stale mark should have been cleared on first open after the fix")
+	}
+	if err := s.MarkMonth(ctx, "2020-01"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if done, _ := s.MonthDone(ctx, "2020-01"); !done {
+		t.Error("marks written after the fix must survive a reopen")
+	}
+}

@@ -118,6 +118,10 @@ func Open(path string) (*Store, error) {
 		`CREATE TABLE IF NOT EXISTS backfill (ym TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS observations_cols ON observations (obs_time)`,
+		// Months marked before the IEM end-date fix are missing their last day.
+		// Clear the marks once so the next backfill refetches them.
+		`DELETE FROM backfill WHERE NOT EXISTS (SELECT 1 FROM cache WHERE key = 'backfill_end_exclusive')`,
+		`INSERT OR IGNORE INTO cache (key, value) VALUES ('backfill_end_exclusive', x'01')`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			db.Close()

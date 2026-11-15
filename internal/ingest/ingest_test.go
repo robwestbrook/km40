@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -100,5 +101,57 @@ func TestParseIEMPreservesCommaInRemarks(t *testing.T) {
 	}
 	if !strings.Contains(obs[0].Raw, "SLP123") {
 		t.Errorf("raw lost text after comma: %q", obs[0].Raw)
+	}
+}
+
+// IEM treats the end date as exclusive, so a month request must end on the
+// first day of the next month or the month's last day is silently dropped.
+func TestBackfillRequestEndsOnFirstOfNextMonth(t *testing.T) {
+	var got url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query()
+		w.Write([]byte("station,valid,metar\n"))
+	}))
+	defer srv.Close()
+	old := IEMEndpoint
+	IEMEndpoint = srv.URL
+	defer func() { IEMEndpoint = old }()
+
+	from := time.Date(2013, 12, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2014, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := Backfill(context.Background(), openStore(t), srv.Client(), from, to, nil); err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[string]string{
+		"year1": "2013", "month1": "12", "day1": "1",
+		"year2": "2014", "month2": "1", "day2": "1",
+	} {
+		if got.Get(k) != want {
+			t.Errorf("%s = %q, want %q", k, got.Get(k), want)
+		}
+	}
+}
+
+// A month that is still in progress must be refetched next time, not marked
+// done: the live feed only covers six hours, so a marked partial month would
+// keep any gap forever.
+func TestBackfillDoesNotMarkInProgressMonth(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("station,valid,metar\n"))
+	}))
+	defer srv.Close()
+	old := IEMEndpoint
+	IEMEndpoint = srv.URL
+	defer func() { IEMEndpoint = old }()
+
+	s := openStore(t)
+	ctx := context.Background()
+	from := time.Date(2013, 3, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2013, 3, 20, 12, 0, 0, 0, time.UTC)
+	if err := Backfill(ctx, s, srv.Client(), from, now, nil); err != nil {
+		t.Fatal(err)
+	}
+	if done, _ := s.MonthDone(ctx, "2013-03"); done {
+		t.Error("in-progress month must not be marked done")
 	}
 }

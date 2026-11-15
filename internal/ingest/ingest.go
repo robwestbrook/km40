@@ -93,12 +93,14 @@ func Backfill(ctx context.Context, st *store.Store, client *http.Client, from, t
 		} else if done {
 			continue
 		}
-		last := m.AddDate(0, 1, -1)
+		// IEM's end date is exclusive: end on the first of the next month, or
+		// the month's last day is dropped.
+		next := m.AddDate(0, 1, 0)
 		q := url.Values{
 			"station": {"M40"},
 			"data":    {"metar"},
 			"year1":   {m.Format("2006")}, "month1": {m.Format("1")}, "day1": {"1"},
-			"year2": {last.Format("2006")}, "month2": {last.Format("1")}, "day2": {last.Format("2")},
+			"year2": {next.Format("2006")}, "month2": {next.Format("1")}, "day2": {"1"},
 			"tz": {"UTC"}, "format": {"onlycomma"}, "latlon": {"no"},
 			"missing": {"M"}, "trace": {"T"}, "direct": {"no"},
 		}
@@ -112,8 +114,12 @@ func Backfill(ctx context.Context, st *store.Store, client *http.Client, from, t
 				return fmt.Errorf("backfill %s: %w", ym, err)
 			}
 		}
-		if err := st.MarkMonth(ctx, ym); err != nil {
-			return err
+		// Only a finished month is marked done; an in-progress month is
+		// refetched on the next run so downtime never leaves a permanent gap.
+		if !next.After(to) {
+			if err := st.MarkMonth(ctx, ym); err != nil {
+				return err
+			}
 		}
 		if log != nil {
 			log(fmt.Sprintf("backfilled %s (%d reports)", ym, len(obs)))
