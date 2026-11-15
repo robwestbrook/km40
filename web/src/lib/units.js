@@ -8,9 +8,12 @@ export const ELEMENTS = {
 	humidity: { label: 'Relative humidity', unit: '%', conv: (v) => v, digits: 0 },
 	wind: { label: 'Wind speed', unit: 'mph', conv: KT_TO_MPH, digits: 0 },
 	gust: { label: 'Wind gust', unit: 'mph', conv: KT_TO_MPH, digits: 0 },
+	// A bearing is circular: it has a prevailing direction, not a high or low,
+	// and no records.
+	winddir: { label: 'Wind direction', unit: '°', conv: (v) => v, digits: 0, circular: true },
 	visibility: { label: 'Visibility', unit: 'mi', conv: (v) => v, digits: 1 },
 	ceiling: { label: 'Ceiling', unit: 'ft', conv: (v) => v, digits: 0 },
-	sky: { label: 'Sky cover', unit: '%', conv: (v) => v, digits: 0 },
+	sky: { label: 'Sky cover', unit: '%', conv: (v) => v, digits: 0, range: [0, 100] },
 	altimeter: { label: 'Altimeter', unit: 'inHg', conv: (v) => v, digits: 2 },
 	precip: { label: 'Precipitation', unit: 'in', conv: (v) => v, digits: 2 }
 };
@@ -36,6 +39,7 @@ export function currentValue(c, key) {
 			humidity: c.humidity,
 			wind: c.windKt,
 			gust: c.gustKt,
+			winddir: c.windDir,
 			visibility: c.visibilitySM,
 			ceiling: c.ceilingFt,
 			sky: c.skyCoverPct,
@@ -58,6 +62,28 @@ const DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW'
 export function compass(deg) {
 	if (deg === null || deg === undefined) return '';
 	return DIRS[Math.round(deg / 22.5) % 16];
+}
+
+// A fixed chart axis for elements with natural bounds, else null (autoscale).
+export function rangeOf(key) {
+	return ELEMENTS[key]?.range ?? null;
+}
+
+export function isCircular(key) {
+	return ELEMENTS[key]?.circular === true;
+}
+
+// "SSW · 14%": the compass point a wind blows from most often, and the share
+// of reports it accounts for. `deg` is the compass point's centre.
+export function prevailingText(deg, share) {
+	if (deg === null || deg === undefined || Number.isNaN(deg)) return '—';
+	return `${compass(deg)} · ${Math.round(share * 100)}%`;
+}
+
+// "WSW 245°" for a bearing in degrees; never "360°".
+export function bearingText(deg) {
+	if (deg === null || deg === undefined || Number.isNaN(deg)) return '—';
+	return `${compass(deg)} ${Math.round(deg) % 360}°`;
 }
 
 export function localTime(iso) {

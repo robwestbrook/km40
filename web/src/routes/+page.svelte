@@ -3,7 +3,7 @@
 	import Chart from '$lib/Chart.svelte';
 	import Window from '$lib/Window.svelte';
 	import { getJSON } from '$lib/api.js';
-	import { sentence, fmt, unit, localTime, clockTime, compass, ELEMENTS, windowHours, presetRange, currentValue } from '$lib/units.js';
+	import { sentence, fmt, unit, localTime, clockTime, compass, ELEMENTS, windowHours, presetRange, currentValue, isCircular, prevailingText } from '$lib/units.js';
 
 	let summary = null;
 	let error = '';
@@ -71,6 +71,11 @@
 		const c = summary?.current;
 		if (key === 'wind' && c?.windKt) {
 			return `${compass(c.windDir)}${c.gustKt ? ` · gust ${fmt(c.gustKt, 'gust')} ${unit('gust')}` : ''}`;
+		}
+		if (key === 'winddir') {
+			if (c?.windDir != null) return compass(c.windDir);
+			if (c?.windKt === 0) return 'calm';
+			return c?.windKt > 0 ? 'variable' : ''; // wind with no direction is variable
 		}
 		if (key === 'temp' && c?.humidity != null) return `${fmt(c.humidity, 'humidity')}% humidity`;
 		if (key === 'precip' && c?.precipIn == null) return 'none in the last report';
@@ -155,28 +160,34 @@
 				</div>
 
 				<dl class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-slate-800/80 pt-2 text-[11px]">
-					<div class="flex justify-between">
-						<dt class="text-slate-500">Low</dt>
-						<dd class="text-slate-300">
-							{el.hasData ? `${fmt(el.min, el.element)}${el.aggregate === 'sum' ? '' : ''}` : '—'}
-						</dd>
-					</div>
-					<div class="flex justify-between">
-						<dt class="text-slate-500">High</dt>
-						<dd class="text-slate-300">{el.hasData ? fmt(el.max, el.element) : '—'}</dd>
-					</div>
-					<div class="flex justify-between">
-						<dt class="text-slate-500">Record high</dt>
-						<dd class="text-slate-300" title={el.recordHighDate}>
-							{el.hasRecord ? `${fmt(el.recordHigh, el.element)} · ${el.recordHighDate.slice(0, 4)}` : '—'}
-						</dd>
-					</div>
-					<div class="flex justify-between">
-						<dt class="text-slate-500">Record low</dt>
-						<dd class="text-slate-300" title={el.recordLowDate}>
-							{el.hasRecord ? `${fmt(el.recordLow, el.element)} · ${el.recordLowDate.slice(0, 4)}` : '—'}
-						</dd>
-					</div>
+					{#if isCircular(el.element)}
+						<!-- A bearing has a prevailing direction, not a high, low or records. -->
+						<div class="col-span-2 flex justify-between">
+							<dt class="text-slate-500">Prevailing</dt>
+							<dd class="text-slate-300">{prevailingText(el.prevailing, el.prevailingShare)}</dd>
+						</div>
+					{:else}
+						<div class="flex justify-between">
+							<dt class="text-slate-500">Low</dt>
+							<dd class="text-slate-300">{el.hasData ? fmt(el.min, el.element) : '—'}</dd>
+						</div>
+						<div class="flex justify-between">
+							<dt class="text-slate-500">High</dt>
+							<dd class="text-slate-300">{el.hasData ? fmt(el.max, el.element) : '—'}</dd>
+						</div>
+						<div class="flex justify-between">
+							<dt class="text-slate-500">Record high</dt>
+							<dd class="text-slate-300" title={el.recordHighDate}>
+								{el.hasRecord ? `${fmt(el.recordHigh, el.element)} · ${el.recordHighDate.slice(0, 4)}` : '—'}
+							</dd>
+						</div>
+						<div class="flex justify-between">
+							<dt class="text-slate-500">Record low</dt>
+							<dd class="text-slate-300" title={el.recordLowDate}>
+								{el.hasRecord ? `${fmt(el.recordLow, el.element)} · ${el.recordLowDate.slice(0, 4)}` : '—'}
+							</dd>
+						</div>
+					{/if}
 				</dl>
 			</section>
 		{/each}

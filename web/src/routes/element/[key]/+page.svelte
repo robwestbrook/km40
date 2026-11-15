@@ -3,7 +3,7 @@
 	import Chart from '$lib/Chart.svelte';
 	import Window from '$lib/Window.svelte';
 	import { getJSON } from '$lib/api.js';
-	import { fmt, unit, localTime, ELEMENTS, compass, windowHours, calendarDay, currentValue } from '$lib/units.js';
+	import { fmt, unit, localTime, ELEMENTS, compass, windowHours, calendarDay, currentValue, isCircular, prevailingText } from '$lib/units.js';
 
 	let latest = null;
 	let stats = null;
@@ -76,7 +76,7 @@
 				{fmt(reading, key)}
 				<span class="text-base font-normal text-slate-500">{unit(key)}</span>
 			</p>
-			{#if key === 'wind' && latest?.current?.windDir != null}
+			{#if (key === 'wind' || key === 'winddir') && latest?.current?.windDir != null}
 				<p class="text-xs text-slate-500">
 					from {compass(latest.current.windDir)} ({latest.current.windDir}°)
 				</p>
@@ -112,7 +112,16 @@
 	</div>
 </section>
 
-{#if stats}
+{#if stats && isCircular(key)}
+	<!-- A bearing has a prevailing direction, not a high, low or records. -->
+	<dl class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+		<div class="rounded-xl border border-slate-800/80 bg-slate-900/50 p-3">
+			<dt class="text-[11px] uppercase tracking-wide text-slate-500">Prevailing direction</dt>
+			<dd class="mt-1 text-lg text-slate-100">{prevailingText(stats.prevailing, stats.prevailingShare)}</dd>
+			<dd class="text-[11px] text-slate-500">most frequent direction, of the reports that give one</dd>
+		</div>
+	</dl>
+{:else if stats}
 	<dl class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
 		<div class="rounded-xl border border-slate-800/80 bg-slate-900/50 p-3">
 			<dt class="text-[11px] uppercase tracking-wide text-slate-500">Window low</dt>

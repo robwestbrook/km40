@@ -192,6 +192,104 @@ func TestSkyCoverSQLMatchesGo(t *testing.T) {
 	}
 }
 
+func dirObs(t time.Time, deg int) metar.Obs {
+	return metar.Obs{Time: t, Raw: "KM40 TEST", WindDir: &deg}
+}
+
+// angleDiff is the smallest difference between two bearings, in degrees.
+func angleDiff(a, b float64) float64 {
+	d := math.Mod(math.Abs(a-b), 360)
+	if d > 180 {
+		d = 360 - d
+	}
+	return d
+}
+
+// Wind direction is circular: 350 and 10 average to north, not to south, and
+// calm reports (no direction) are not counted at all.
+func TestWindDirectionAveragesAroundTheCircle(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	base := time.Date(2021, 7, 1, 12, 0, 0, 0, time.UTC)
+	if _, err := s.Upsert(ctx, []metar.Obs{
+		dirObs(base, 350),
+		dirObs(base.Add(5*time.Minute), 10),
+		{Time: base.Add(10 * time.Minute), Raw: "calm"}, // no direction: ignored
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ser, err := s.Series(ctx, "winddir", base.Add(-time.Hour), base.Add(time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ser.Aggregate != "circular" || !ser.HasData || len(ser.Points) != 1 {
+		t.Fatalf("series = %+v, want one circular point", ser)
+	}
+	if d := angleDiff(ser.Points[0].V, 0); d > 0.5 {
+		t.Errorf("bucket direction = %v, want about 0 (north)", ser.Points[0].V)
+	}
+	if ser.Prevailing == nil || angleDiff(*ser.Prevailing, 0) > 0.5 || ser.PrevailingShare != 1 {
+		t.Errorf("prevailing = %v share %v, want north for all reports", ser.Prevailing, ser.PrevailingShare)
+	}
+	if ser.HasRecord {
+		t.Error("a bearing has no record high or low")
+	}
+}
+
+func TestWindDirectionPrevailingAndNoPrevailing(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	base := time.Date(2021, 7, 1, 12, 0, 0, 0, time.UTC)
+	if _, err := s.Upsert(ctx, []metar.Obs{
+		dirObs(base, 90), dirObs(base.Add(time.Hour), 100), dirObs(base.Add(2*time.Hour), 110),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ser, err := s.Series(ctx, "winddir", base.Add(-time.Hour), base.Add(3*time.Hour), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Prevailing is the compass point the wind blows from most often (the
+	// meteorological meaning), not a vector mean: 90 and 100 are both E, 110 is
+	// ESE, so E wins with two of three reports.
+	if ser.Prevailing == nil || angleDiff(*ser.Prevailing, 90) > 0.5 || math.Abs(ser.PrevailingShare-2.0/3) > 0.01 {
+		t.Errorf("prevailing = %v share %v, want E (90) with share 0.67", ser.Prevailing, ser.PrevailingShare)
+	}
+
+	// Opposite directions do not cancel out: a prevailing direction is still
+	// defined. A tie goes to the lower compass point, so it is deterministic.
+	s2 := open(t)
+	if _, err := s2.Upsert(ctx, []metar.Obs{dirObs(base, 180), dirObs(base.Add(time.Hour), 0)}); err != nil {
+		t.Fatal(err)
+	}
+	ser, err = s2.Series(ctx, "winddir", base.Add(-time.Hour), base.Add(3*time.Hour), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ser.Prevailing == nil || angleDiff(*ser.Prevailing, 0) > 0.5 || ser.PrevailingShare != 0.5 {
+		t.Errorf("tie: prevailing = %v share %v, want N with share 0.5", ser.Prevailing, ser.PrevailingShare)
+	}
+}
+
+// A circular element has no records, and rebuilding them must not trip on it.
+func TestRefreshRecordsSkipsCircularElements(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	if _, err := s.Upsert(ctx, []metar.Obs{dirObs(chi(t, 2019, 7, 1, 12, 0), 200)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RefreshRecords(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ser, err := s.Series(ctx, "winddir", chi(t, 2021, 7, 1, 0, 0).UTC(), chi(t, 2021, 7, 1, 23, 0).UTC(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ser.HasRecord {
+		t.Error("winddir must not report records")
+	}
+}
+
 // A database from before the sky_cover column gets the column and its values
 // filled in once from the stored sky text.
 func TestOpenAddsAndFillsSkyCoverColumn(t *testing.T) {

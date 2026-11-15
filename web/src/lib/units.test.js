@@ -1,7 +1,7 @@
 // Run with: npm --prefix web test   (Node's built-in runner, no extra dependency)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sentence, presetRange, currentValue, ELEMENTS } from './units.js';
+import { sentence, presetRange, currentValue, isCircular, bearingText, prevailingText, rangeOf, ELEMENTS } from './units.js';
 
 const obs = (extra) => ({ tempC: 20, windKt: 0, ...extra });
 const lead = (weather) => sentence(obs({ weather })).split(' · ')[0];
@@ -63,15 +63,46 @@ test('currentValue picks the current reading for each element', () => {
 	assert.equal(currentValue(c, 'wind'), 7);
 	assert.equal(currentValue(c, 'ceiling'), 4800);
 	assert.equal(currentValue(c, 'sky'), 75);
+	assert.equal(currentValue({ windDir: 245 }, 'winddir'), 245);
 	assert.equal(currentValue(c, 'precip'), null);
 	assert.equal(currentValue(c, 'nope'), null);
 	assert.equal(currentValue(null, 'temp'), null);
 });
 
 test('every element the server reports has a display definition', () => {
-	for (const key of ['temp', 'dewpoint', 'humidity', 'wind', 'gust', 'visibility', 'ceiling', 'sky', 'altimeter', 'precip']) {
+	for (const key of ['temp', 'dewpoint', 'humidity', 'wind', 'gust', 'winddir', 'visibility', 'ceiling', 'sky', 'altimeter', 'precip']) {
 		assert.ok(ELEMENTS[key], `missing ELEMENTS.${key}`);
 	}
+});
+
+// A bearing is circular: no high/low/records, shown as a compass point.
+test('only wind direction is circular', () => {
+	assert.equal(isCircular('winddir'), true);
+	assert.equal(isCircular('wind'), false);
+	assert.equal(isCircular('temp'), false);
+	assert.equal(isCircular('nope'), false);
+});
+
+// A percentage that is always 0 must not autoscale to -1..1 around a flat line.
+test('sky cover has a fixed 0-100 axis; other elements autoscale', () => {
+	assert.deepEqual(rangeOf('sky'), [0, 100]);
+	assert.equal(rangeOf('temp'), null);
+	assert.equal(rangeOf('nope'), null);
+});
+
+test('prevailing direction reads as compass point and share of reports', () => {
+	assert.equal(prevailingText(202.5, 0.14), 'SSW · 14%');
+	assert.equal(prevailingText(0, 1), 'N · 100%');
+	assert.equal(prevailingText(null, 0), '—');
+	assert.equal(prevailingText(undefined, 0), '—');
+});
+
+test('a bearing reads as compass point and degrees', () => {
+	assert.equal(bearingText(245), 'WSW 245°');
+	assert.equal(bearingText(0), 'N 0°');
+	assert.equal(bearingText(359.6), 'N 0°'); // rounds to north, never "360"
+	assert.equal(bearingText(null), '—');
+	assert.equal(bearingText(undefined), '—');
 });
 
 test('presetRange has no range for custom or unknown presets', () => {

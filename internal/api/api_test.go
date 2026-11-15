@@ -69,8 +69,8 @@ func TestSummaryWorksOnEmptyDatabase(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Elements) != 10 {
-		t.Fatalf("elements = %d, want 10", len(got.Elements))
+	if len(got.Elements) != 11 {
+		t.Fatalf("elements = %d, want 11", len(got.Elements))
 	}
 	if got.Station.ID != "KM40" {
 		t.Errorf("station = %q", got.Station.ID)
@@ -224,7 +224,7 @@ func TestStatusReportsCounts(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Observations != 0 || len(got.Elements) != 10 {
+	if got.Observations != 0 || len(got.Elements) != 11 {
 		t.Errorf("status = %+v", got)
 	}
 }

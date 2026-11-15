@@ -36,6 +36,7 @@ var elements = []Element{
 	{Key: "humidity", Label: "Relative humidity", Unit: "%", Precision: 0, column: "rh", agg: "avg"},
 	{Key: "wind", Label: "Wind speed", Unit: "kt", Precision: 0, column: "wind_kt", agg: "avg"},
 	{Key: "gust", Label: "Wind gust", Unit: "kt", Precision: 0, column: "gust_kt", agg: "max"},
+	{Key: "winddir", Label: "Wind direction", Unit: "°", Precision: 0, column: "wind_dir", agg: "circular"},
 	{Key: "visibility", Label: "Visibility", Unit: "mi", Precision: 1, column: "vis_sm", agg: "min"},
 	{Key: "ceiling", Label: "Ceiling", Unit: "ft", Precision: 0, column: "ceiling_ft", agg: "min"},
 	{Key: "sky", Label: "Sky cover", Unit: "%", Precision: 0, column: "sky_cover", agg: "avg"},
@@ -81,6 +82,13 @@ type Series struct {
 	HasRecord      bool      `json:"hasRecord"`
 	RecordHighDate string    `json:"recordHighDate"`
 	RecordLowDate  string    `json:"recordLowDate"`
+	// Prevailing is, for a circular element such as wind direction, the centre
+	// of the compass point it occurs at most often in the window (the
+	// meteorological meaning), and PrevailingShare the fraction of reports in
+	// it. Nil when there are no reports. Circular elements have no
+	// min/max/average and no records.
+	Prevailing      *float64 `json:"prevailing"`
+	PrevailingShare float64  `json:"prevailingShare"`
 }
 
 // daily is one calendar day's extreme, with the observation that produced it.
@@ -323,6 +331,9 @@ func (s *Store) RefreshRecords(ctx context.Context) error {
 	defer s.refreshMu.Unlock()
 	recs := make(map[string]map[string]map[string]daily, len(elements))
 	for _, e := range elements {
+		if e.agg == "circular" {
+			continue // a bearing has no record high or low
+		}
 		highs, err := s.dailyExtreme(ctx, e.column, "MAX")
 		if err != nil {
 			return err
@@ -429,6 +440,9 @@ func (s *Store) Series(ctx context.Context, key string, from, to time.Time, poin
 	bucket := seconds / int64(points)
 	if bucket < 60 {
 		bucket = 60
+	}
+	if e.agg == "circular" {
+		return s.circularSeries(ctx, e, from, to, bucket)
 	}
 
 	agg := e.agg
