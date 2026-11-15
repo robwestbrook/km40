@@ -81,12 +81,17 @@ func run() error {
 		}
 	}()
 
+	// health stays a nil interface with -no-ingest, so /api/status reports
+	// "ingest": null instead of a misleading "pending".
+	var health api.HealthSource
 	if !*noIngest {
+		h := ingest.NewHealth()
+		health = h
 		client := &http.Client{Timeout: 30 * time.Second}
 		bg.Add(1)
 		go func() {
 			defer bg.Done()
-			if err := ingest.Run(ctx, st, client, func(s string) { log.Print(s) }); err != nil && ctx.Err() == nil {
+			if err := ingest.Run(ctx, st, client, h, func(s string) { log.Print(s) }); err != nil && ctx.Err() == nil {
 				log.Printf("ingest stopped: %v", err)
 			}
 		}()
@@ -94,7 +99,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           api.New(st, static),
+		Handler:           api.New(st, static, health),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	serveErr := make(chan error, 1)

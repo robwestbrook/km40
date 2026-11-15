@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +25,13 @@ var (
 )
 
 const userAgent = "km40-dashboard/1.0 (+personal weather dashboard)"
+
+// pollEvery is how often the live feed is fetched.
+const pollEvery = 5 * time.Minute
+
+// retryWait is the first pause between retries of a failed archive request
+// (it quadruples each time); a variable so tests need not wait.
+var retryWait = 5 * time.Second
 
 func newRequest(ctx context.Context, rawURL string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -84,13 +92,35 @@ func Live(ctx context.Context, st *store.Store, client *http.Client) (int, error
 
 // Backfill fetches raw METARs month by month. Completed months are marked, so
 // an interrupted run resumes where it stopped.
-func Backfill(ctx context.Context, st *store.Store, client *http.Client, from, to time.Time, log func(string)) error {
+//
+// health, which may be nil, is told how far the run has got and why it failed.
+func Backfill(ctx context.Context, st *store.Store, client *http.Client, from, to time.Time, log func(string), health *Health) error {
 	from = time.Date(from.Year(), from.Month(), 1, 0, 0, 0, 0, time.UTC)
+	total := 0
+	for m := from; m.Before(to); m = m.AddDate(0, 1, 0) {
+		total++
+	}
+	health.update(func(s *Snapshot) { s.Backfill = BackfillStatus{State: "running", MonthsTotal: total} })
+	// fail records an error unless the run was merely cancelled (shutdown).
+	fail := func(err error) error {
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			health.update(func(s *Snapshot) {
+				s.Backfill.State, s.Backfill.LastError, s.Backfill.LastErrorAt = "failed", err.Error(), stamp()
+			})
+		}
+		return err
+	}
+	complete := 0
+	monthComplete := func() {
+		complete++
+		health.update(func(s *Snapshot) { s.Backfill.MonthsDone = complete })
+	}
 	for m := from; m.Before(to); m = m.AddDate(0, 1, 0) {
 		ym := m.Format("2006-01")
 		if done, err := st.MonthDone(ctx, ym); err != nil {
-			return err
+			return fail(err)
 		} else if done {
+			monthComplete()
 			continue
 		}
 		// IEM's end date is exclusive: end on the first of the next month, or
@@ -106,21 +136,22 @@ func Backfill(ctx context.Context, st *store.Store, client *http.Client, from, t
 		}
 		body, err := getWithRetry(ctx, client, IEMEndpoint+"?"+q.Encode())
 		if err != nil {
-			return fmt.Errorf("backfill %s: %w", ym, err)
+			return fail(fmt.Errorf("backfill %s: %w", ym, err))
 		}
 		obs := parseIEM(body)
 		if len(obs) > 0 {
 			if _, err := st.Upsert(ctx, obs); err != nil {
-				return fmt.Errorf("backfill %s: %w", ym, err)
+				return fail(fmt.Errorf("backfill %s: %w", ym, err))
 			}
 		}
 		// Only a finished month is marked done; an in-progress month is
 		// refetched on the next run so downtime never leaves a permanent gap.
 		if !next.After(to) {
 			if err := st.MarkMonth(ctx, ym); err != nil {
-				return err
+				return fail(err)
 			}
 		}
+		monthComplete()
 		if log != nil {
 			log(fmt.Sprintf("backfilled %s (%d reports)", ym, len(obs)))
 		}
@@ -130,6 +161,7 @@ func Backfill(ctx context.Context, st *store.Store, client *http.Client, from, t
 		case <-time.After(2 * time.Second):
 		}
 	}
+	health.update(func(s *Snapshot) { s.Backfill.State = "done" })
 	return nil
 }
 
@@ -137,7 +169,7 @@ func Backfill(ctx context.Context, st *store.Store, client *http.Client, from, t
 // giving up; the month stays unmarked, so a restart resumes it.
 func getWithRetry(ctx context.Context, client *http.Client, rawURL string) ([]byte, error) {
 	var err error
-	for attempt, wait := 0, 5*time.Second; attempt < 3; attempt++ {
+	for attempt, wait := 0, retryWait; attempt < 3; attempt++ {
 		var body []byte
 		if body, err = get(ctx, client, rawURL); err == nil {
 			return body, nil
@@ -183,14 +215,34 @@ func parseIEM(body []byte) []metar.Obs {
 	return obs
 }
 
+// poll fetches the live feed once, records the outcome in health and returns
+// the number of reports stored. A failed poll keeps the last success on record.
+func poll(ctx context.Context, st *store.Store, client *http.Client, health *Health, log func(string)) int {
+	health.update(func(s *Snapshot) { s.Poller.LastAttemptAt = stamp() })
+	n, err := Live(ctx, st, client)
+	if err != nil {
+		if log != nil {
+			log("live: " + err.Error())
+		}
+		if ctx.Err() == nil {
+			health.update(func(s *Snapshot) { s.Poller.LastError, s.Poller.LastErrorAt = err.Error(), stamp() })
+		}
+		return 0
+	}
+	health.update(func(s *Snapshot) {
+		s.Poller.LastSuccessAt, s.Poller.LastReports, s.Poller.LastError = stamp(), n, ""
+	})
+	return n
+}
+
 // Run backfills history, then polls the live feed every five minutes. Record
 // tables are refreshed after the backfill and hourly.
-func Run(ctx context.Context, st *store.Store, client *http.Client, log func(string)) error {
+func Run(ctx context.Context, st *store.Store, client *http.Client, health *Health, log func(string)) error {
 	if log != nil {
 		log("backfill starting")
 	}
 	before, _ := st.Count(ctx)
-	if err := Backfill(ctx, st, client, ArchiveStart, time.Now().UTC(), log); err != nil {
+	if err := Backfill(ctx, st, client, ArchiveStart, time.Now().UTC(), log, health); err != nil {
 		if log != nil {
 			log("backfill: " + err.Error())
 		}
@@ -206,13 +258,10 @@ func Run(ctx context.Context, st *store.Store, client *http.Client, log func(str
 	}
 
 	lastRefresh := time.Now()
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(pollEvery)
 	defer ticker.Stop()
 	for {
-		n, err := Live(ctx, st, client)
-		if err != nil && log != nil {
-			log("live: " + err.Error())
-		}
+		n := poll(ctx, st, client, health, log)
 		if n > 0 && time.Since(lastRefresh) > time.Hour {
 			// Count the attempt even when it fails (for example a snapshot
 			// that cannot be saved): retrying a 30 s scan every poll would

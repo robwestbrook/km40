@@ -11,6 +11,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"km40/internal/ingest"
 	"km40/internal/metar"
 	"km40/internal/store"
 )
@@ -22,10 +23,10 @@ func TestWindowDatesAreStationLocalAndEndInclusive(t *testing.T) {
 		from, to         string
 		wantFrom, wantTo string
 	}{
-		{"2024-01-05", "2024-01-05", "2024-01-05T06:00:00Z", "2024-01-06T05:59:59Z"}, // CST
-		{"2024-07-04", "2024-07-04", "2024-07-04T05:00:00Z", "2024-07-05T04:59:59Z"}, // CDT
-		{"2024-03-10", "2024-03-10", "2024-03-10T06:00:00Z", "2024-03-11T04:59:59Z"}, // 23 h DST day
-		{"2024-11-03", "2024-11-03", "2024-11-03T05:00:00Z", "2024-11-04T05:59:59Z"}, // 25 h DST day
+		{"2024-01-05", "2024-01-05", "2024-01-05T06:00:00Z", "2024-01-06T05:59:59Z"},                     // CST
+		{"2024-07-04", "2024-07-04", "2024-07-04T05:00:00Z", "2024-07-05T04:59:59Z"},                     // CDT
+		{"2024-03-10", "2024-03-10", "2024-03-10T06:00:00Z", "2024-03-11T04:59:59Z"},                     // 23 h DST day
+		{"2024-11-03", "2024-11-03", "2024-11-03T05:00:00Z", "2024-11-04T05:59:59Z"},                     // 25 h DST day
 		{"2024-01-05T10:00:00Z", "2024-01-06T10:00:00Z", "2024-01-05T10:00:00Z", "2024-01-06T10:00:00Z"}, // instants pass through
 	}
 	for _, c := range cases {
@@ -45,6 +46,11 @@ func TestWindowDatesAreStationLocalAndEndInclusive(t *testing.T) {
 
 func testHandler(t *testing.T) (http.Handler, *store.Store) {
 	t.Helper()
+	return testHandlerWith(t, nil)
+}
+
+func testHandlerWith(t *testing.T, health HealthSource) (http.Handler, *store.Store) {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +61,68 @@ func testHandler(t *testing.T) (http.Handler, *store.Store) {
 		"200.html":    &fstest.MapFile{Data: []byte("<html>spa</html>")},
 		"_app/app.js": &fstest.MapFile{Data: []byte("console.log(1)")},
 	}
-	return New(st, static), st
+	return New(st, static, health), st
+}
+
+type fakeHealth struct{ s ingest.Snapshot }
+
+func (f fakeHealth) Snapshot() ingest.Snapshot { return f.s }
+
+// /api/status reports backfill and poller health when ingest is running.
+func TestStatusIncludesIngestHealth(t *testing.T) {
+	h, _ := testHandlerWith(t, fakeHealth{ingest.Snapshot{
+		Backfill: ingest.BackfillStatus{State: "running", MonthsDone: 12, MonthsTotal: 178},
+		Poller:   ingest.PollerStatus{LastSuccessAt: "2026-11-15T12:00:00Z", LastReports: 4, IntervalSeconds: 300, LastError: "boom"},
+	}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/status", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var got struct {
+		Ingest *struct {
+			Backfill struct {
+				State       string `json:"state"`
+				MonthsDone  int    `json:"monthsDone"`
+				MonthsTotal int    `json:"monthsTotal"`
+			} `json:"backfill"`
+			Poller struct {
+				LastSuccessAt   string `json:"lastSuccessAt"`
+				LastReports     int    `json:"lastReports"`
+				IntervalSeconds int    `json:"intervalSeconds"`
+				LastError       string `json:"lastError"`
+			} `json:"poller"`
+		} `json:"ingest"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Ingest == nil {
+		t.Fatalf("no ingest health in %s", rec.Body.String())
+	}
+	if b := got.Ingest.Backfill; b.State != "running" || b.MonthsDone != 12 || b.MonthsTotal != 178 {
+		t.Errorf("backfill = %+v", b)
+	}
+	if p := got.Ingest.Poller; p.LastSuccessAt != "2026-11-15T12:00:00Z" || p.LastReports != 4 || p.IntervalSeconds != 300 || p.LastError != "boom" {
+		t.Errorf("poller = %+v", p)
+	}
+}
+
+// With -no-ingest there is nothing to report; the field is null, not an error.
+func TestStatusWithoutIngestHealth(t *testing.T) {
+	h, _ := testHandler(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/status", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := got["ingest"]; !ok || string(v) != "null" {
+		t.Errorf("ingest = %s (present=%v), want null", v, ok)
+	}
 }
 
 func TestSummaryWorksOnEmptyDatabase(t *testing.T) {

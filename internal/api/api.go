@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"km40/internal/ingest"
 	"km40/internal/metar"
 	"km40/internal/store"
 )
@@ -69,9 +70,17 @@ type Status struct {
 	Last         string   `json:"last"`
 	Years        []int    `json:"years"`
 	Elements     []string `json:"elements"`
+	// Ingest is the backfill and live-feed health; null when ingest is off.
+	Ingest *ingest.Snapshot `json:"ingest"`
 }
 
-func New(st *store.Store, static fs.FS) http.Handler {
+// HealthSource reports what the ingest goroutine is doing (*ingest.Health).
+type HealthSource interface {
+	Snapshot() ingest.Snapshot
+}
+
+// New builds the HTTP handler. health may be nil when ingest is turned off.
+func New(st *store.Store, static fs.FS, health HealthSource) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/summary", func(w http.ResponseWriter, r *http.Request) {
 		from, to, points, err := window(r, 96)
@@ -189,6 +198,10 @@ func New(st *store.Store, static fs.FS) http.Handler {
 		}
 		for _, e := range store.Elements() {
 			out.Elements = append(out.Elements, e.Key)
+		}
+		if health != nil {
+			snap := health.Snapshot()
+			out.Ingest = &snap
 		}
 		writeJSON(w, out)
 	})
