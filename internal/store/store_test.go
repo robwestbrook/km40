@@ -13,6 +13,24 @@ import (
 
 func f(v float64) *float64 { return &v }
 
+// An undecodable newest report is still the latest observation: Latest must
+// not fail, or /api/summary goes down until a decodable report arrives.
+func TestLatestSurvivesUnparseableReport(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	at := time.Date(2020, 5, 1, 12, 0, 0, 0, time.UTC)
+	if _, err := s.Upsert(ctx, []metar.Obs{{Time: at, Raw: "KM40 AUTO 10SM CLR"}}); err != nil {
+		t.Fatal(err)
+	}
+	o, err := s.Latest(ctx)
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+	if o == nil || !o.Time.Equal(at) || o.Raw != "KM40 AUTO 10SM CLR" {
+		t.Errorf("Latest = %+v, want the stored report at %v", o, at)
+	}
+}
+
 func obsAt(t time.Time, temp float64) metar.Obs {
 	return metar.Obs{Time: t, Raw: "KM40 TEST", TempC: f(temp), DewpointC: f(temp - 5)}
 }

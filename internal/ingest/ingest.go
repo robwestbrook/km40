@@ -171,7 +171,12 @@ func parseIEM(body []byte) []metar.Obs {
 		}
 		o, err := metar.Parse(parts[2], valid)
 		if err != nil {
-			continue
+			if o.Raw == "" {
+				continue // nothing to keep
+			}
+			// IEM gave us the time, so keep the report (raw only) rather than
+			// lose it; a later parser fix can decode it with -reparse.
+			o.Time = valid
 		}
 		obs = append(obs, o)
 	}

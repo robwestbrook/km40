@@ -104,6 +104,24 @@ func TestParseIEMPreservesCommaInRemarks(t *testing.T) {
 	}
 }
 
+// IEM supplies the observation time in its own column, so a report whose
+// METAR text has no decodable time group must still be stored (raw only).
+func TestParseIEMKeepsReportWithoutTimeGroup(t *testing.T) {
+	obs := parseIEM([]byte("station,valid,metar\n" +
+		"M40,2013-03-01 00:15,KM40 AUTO 34007KT 10SM OVC046 06/05 A3010 RMK AO2\n" +
+		"M40,2013-03-01 00:35,\n"))
+	if len(obs) != 1 {
+		t.Fatalf("got %d obs, want 1 (the empty report has nothing to keep)", len(obs))
+	}
+	want := time.Date(2013, 3, 1, 0, 15, 0, 0, time.UTC)
+	if !obs[0].Time.Equal(want) {
+		t.Errorf("time = %v, want IEM's %v", obs[0].Time, want)
+	}
+	if !strings.Contains(obs[0].Raw, "OVC046") {
+		t.Errorf("raw text lost: %q", obs[0].Raw)
+	}
+}
+
 // IEM treats the end date as exclusive, so a month request must end on the
 // first day of the next month or the month's last day is silently dropped.
 func TestBackfillRequestEndsOnFirstOfNextMonth(t *testing.T) {

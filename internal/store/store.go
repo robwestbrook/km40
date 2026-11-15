@@ -239,7 +239,9 @@ func (s *Store) Latest(ctx context.Context) (*metar.Obs, error) {
 	}
 	o, err := metar.Parse(raw, time.Unix(ts, 0).UTC())
 	if err != nil {
-		return nil, err
+		// An undecodable report is still the latest observation. Parse never
+		// fails hard on stored data; keep the raw text and the stored time.
+		o.Time = time.Unix(ts, 0).UTC()
 	}
 	return &o, nil
 }
