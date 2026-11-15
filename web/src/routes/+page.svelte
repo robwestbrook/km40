@@ -3,7 +3,7 @@
 	import Chart from '$lib/Chart.svelte';
 	import Window from '$lib/Window.svelte';
 	import { getJSON } from '$lib/api.js';
-	import { sentence, fmt, unit, localTime, clockTime, compass, ELEMENTS } from '$lib/units.js';
+	import { sentence, fmt, unit, localTime, clockTime, compass, ELEMENTS, windowHours } from '$lib/units.js';
 
 	let summary = null;
 	let error = '';
@@ -12,7 +12,7 @@
 	let points = 96;
 	let loading = false;
 
-	$: span = from && to ? (new Date(to) - new Date(from)) / 3600e3 : 24;
+	$: span = windowHours(from, to);
 
 	function budget() {
 		return Math.min(600, Math.max(48, Math.round(span * 2)));

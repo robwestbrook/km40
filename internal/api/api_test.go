@@ -15,6 +15,34 @@ import (
 	"km40/internal/store"
 )
 
+// Date-only parameters are station-local (America/Chicago) calendar days and
+// the end date is inclusive: the whole of that day is in the window.
+func TestWindowDatesAreStationLocalAndEndInclusive(t *testing.T) {
+	cases := []struct {
+		from, to         string
+		wantFrom, wantTo string
+	}{
+		{"2024-01-05", "2024-01-05", "2024-01-05T06:00:00Z", "2024-01-06T05:59:59Z"}, // CST
+		{"2024-07-04", "2024-07-04", "2024-07-04T05:00:00Z", "2024-07-05T04:59:59Z"}, // CDT
+		{"2024-03-10", "2024-03-10", "2024-03-10T06:00:00Z", "2024-03-11T04:59:59Z"}, // 23 h DST day
+		{"2024-11-03", "2024-11-03", "2024-11-03T05:00:00Z", "2024-11-04T05:59:59Z"}, // 25 h DST day
+		{"2024-01-05T10:00:00Z", "2024-01-06T10:00:00Z", "2024-01-05T10:00:00Z", "2024-01-06T10:00:00Z"}, // instants pass through
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest("GET", "/api/series?from="+c.from+"&to="+c.to, nil)
+		from, to, _, err := window(r, 100)
+		if err != nil {
+			t.Fatalf("%s..%s: %v", c.from, c.to, err)
+		}
+		if got := from.UTC().Format(time.RFC3339); got != c.wantFrom {
+			t.Errorf("from %s = %s, want %s", c.from, got, c.wantFrom)
+		}
+		if got := to.UTC().Format(time.RFC3339); got != c.wantTo {
+			t.Errorf("to %s = %s, want %s", c.to, got, c.wantTo)
+		}
+	}
+}
+
 func testHandler(t *testing.T) (http.Handler, *store.Store) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))

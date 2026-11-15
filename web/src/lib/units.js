@@ -50,6 +50,27 @@ export function localTime(iso) {
 	});
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+// Hours covered by a window. A date-only end is a whole station-local day, so
+// it runs to the end of that day, matching the API.
+export function windowHours(from, to) {
+	if (!from || !to) return 24;
+	const end = new Date(to).getTime() + (DATE_ONLY.test(to) ? 24 * 3600e3 : 0);
+	return (end - new Date(from).getTime()) / 3600e3;
+}
+
+// A date-only string is a calendar day, not an instant. Format its parts so a
+// time-zone conversion can never move it to the neighbouring day.
+export function calendarDay(s) {
+	if (!s) return '';
+	if (DATE_ONLY.test(s)) {
+		const [y, m, d] = s.split('-');
+		return `${+m}/${+d}/${y}`;
+	}
+	return new Date(s).toLocaleDateString('en-US', { timeZone: 'America/Chicago' });
+}
+
 export function clockTime(iso) {
 	if (!iso) return '—';
 	return new Date(iso).toLocaleTimeString('en-US', {

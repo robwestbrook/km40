@@ -13,6 +13,136 @@ import (
 
 func f(v float64) *float64 { return &v }
 
+func chi(t *testing.T, y int, m time.Month, d, h, min int) time.Time {
+	t.Helper()
+	loc, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return time.Date(y, m, d, h, min, 0, 0, loc)
+}
+
+// Records are per station-local calendar day. A 22:30 CDT report is already
+// the next day in UTC but still belongs to the local day it was taken on.
+func TestRecordsUseLocalCalendarDays(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	if _, err := s.Upsert(ctx, []metar.Obs{
+		obsAt(chi(t, 2019, 7, 1, 22, 30), 38), // local Jul 1 (UTC Jul 2)
+		obsAt(chi(t, 2019, 6, 30, 23, 30), 50), // local Jun 30 (UTC Jul 1): must not leak into Jul 1
+		obsAt(chi(t, 2021, 7, 1, 22, 30), 99),  // inside the displayed window: excluded
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RefreshRecords(ctx); err != nil {
+		t.Fatal(err)
+	}
+	from := chi(t, 2021, 7, 1, 0, 0).UTC()
+	to := chi(t, 2021, 7, 1, 23, 59).Add(59 * time.Second).UTC()
+	ser, err := s.Series(ctx, "temp", from, to, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ser.HasRecord || ser.RecordHigh != 38 || ser.RecordLow != 38 {
+		t.Errorf("record = %v/%v (has=%v), want 38/38", ser.RecordHigh, ser.RecordLow, ser.HasRecord)
+	}
+	if ser.RecordHighDate != "2019-07-01" {
+		t.Errorf("record date = %q, want the local day 2019-07-01", ser.RecordHighDate)
+	}
+}
+
+// The record lookup must visit every local calendar day the window touches,
+// including across the 23 h and 25 h daylight-saving days, and no others.
+func TestRecordsCoverEveryLocalDayOfWindow(t *testing.T) {
+	cases := []struct {
+		name         string
+		from, to     [4]int // month, day, hour, minute in 2020
+		wantHigh     float64
+		wantHighDate string
+		wantLow      float64
+	}{
+		{"spring forward", [4]int{3, 7, 18, 0}, [4]int{3, 9, 17, 0}, 30, "2019-03-07", 10},
+		{"fall back", [4]int{10, 31, 20, 0}, [4]int{11, 2, 1, 0}, 25, "2019-11-01", 5},
+	}
+	days := []struct {
+		m    time.Month
+		d    int
+		temp float64
+	}{
+		{3, 7, 30}, {3, 8, 20}, {3, 9, 10}, {3, 10, 40}, // Mar 10 is outside the spring window
+		{10, 31, 5}, {11, 1, 25}, {11, 2, 15}, {11, 3, 99}, // Nov 3 is outside the fall window
+	}
+	s := open(t)
+	ctx := context.Background()
+	for _, d := range days {
+		if _, err := s.Upsert(ctx, []metar.Obs{obsAt(chi(t, 2019, d.m, d.d, 12, 0), d.temp)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RefreshRecords(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// The API hands the store UTC instants, so do the same here.
+			from := chi(t, 2020, time.Month(c.from[0]), c.from[1], c.from[2], c.from[3]).UTC()
+			to := chi(t, 2020, time.Month(c.to[0]), c.to[1], c.to[2], c.to[3]).UTC()
+			ser, err := s.Series(ctx, "temp", from, to, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !ser.HasRecord || ser.RecordHigh != c.wantHigh || ser.RecordLow != c.wantLow {
+				t.Errorf("record = %v/%v (has=%v), want %v/%v", ser.RecordHigh, ser.RecordLow, ser.HasRecord, c.wantHigh, c.wantLow)
+			}
+			if ser.RecordHighDate != c.wantHighDate {
+				t.Errorf("high date = %q, want %q", ser.RecordHighDate, c.wantHighDate)
+			}
+		})
+	}
+}
+
+// Records computed by the UTC-day code are keyed wrongly; the snapshot is
+// dropped once so it rebuilds under the local-day rule.
+func TestOpenDropsStaleRecordsSnapshotOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "r.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO cache (key, value) VALUES ('records', x'7b7d')`); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a database from before the change: snapshot present, no flag.
+	if _, err := s.db.Exec(`DELETE FROM cache WHERE key = 'records_local_day'`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	count := func() int {
+		s, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		var n int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM cache WHERE key = 'records'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := count(); n != 0 {
+		t.Fatalf("stale snapshot survived the first open (rows=%d)", n)
+	}
+	s, _ = Open(path)
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO cache (key, value) VALUES ('records', x'7b7d')`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if n := count(); n != 1 {
+		t.Errorf("a snapshot written after the change must survive a reopen (rows=%d)", n)
+	}
+}
+
 // An undecodable newest report is still the latest observation: Latest must
 // not fail, or /api/summary goes down until a decodable report arrives.
 func TestLatestSurvivesUnparseableReport(t *testing.T) {

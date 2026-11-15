@@ -208,29 +208,37 @@ func currentOf(o *metar.Obs) Current {
 	return c
 }
 
-// window reads from/to/points with defaults. Dates are "2006-01-02" (UTC) or RFC3339.
+// window reads from/to/points with defaults. Each bound is an RFC3339 instant
+// or a "2006-01-02" station-local calendar day. A date-only from is the start
+// of that day; a date-only to is the end of that day, so the end date is
+// included in the window.
 func window(r *http.Request, defaultPoints int) (time.Time, time.Time, int, error) {
 	q := r.URL.Query()
 	to := time.Now().UTC()
 	from := to.Add(-24 * time.Hour)
-	parse := func(s string) (time.Time, error) {
+	parse := func(s string, endOfDay bool) (time.Time, error) {
 		if t, err := time.Parse(time.RFC3339, s); err == nil {
 			return t, nil
 		}
-		t, err := time.Parse("2006-01-02", s)
+		t, err := time.ParseInLocation("2006-01-02", s, store.Local)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("bad date %q: use YYYY-MM-DD", s)
 		}
-		return t, nil
+		if endOfDay {
+			// Next local midnight minus a second; AddDate keeps 23 h and 25 h
+			// daylight-saving days whole.
+			t = t.AddDate(0, 0, 1).Add(-time.Second)
+		}
+		return t.UTC(), nil
 	}
 	var err error
 	if v := q.Get("to"); v != "" {
-		if to, err = parse(v); err != nil {
+		if to, err = parse(v, true); err != nil {
 			return from, to, 0, err
 		}
 	}
 	if v := q.Get("from"); v != "" {
-		if from, err = parse(v); err != nil {
+		if from, err = parse(v, false); err != nil {
 			return from, to, 0, err
 		}
 	}

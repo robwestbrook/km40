@@ -122,6 +122,10 @@ func Open(path string) (*Store, error) {
 		// Clear the marks once so the next backfill refetches them.
 		`DELETE FROM backfill WHERE NOT EXISTS (SELECT 1 FROM cache WHERE key = 'backfill_end_exclusive')`,
 		`INSERT OR IGNORE INTO cache (key, value) VALUES ('backfill_end_exclusive', x'01')`,
+		// The records snapshot used to be keyed by UTC date; records are now
+		// per station-local day. Drop the stale snapshot once so it rebuilds.
+		`DELETE FROM cache WHERE key = 'records' AND NOT EXISTS (SELECT 1 FROM cache WHERE key = 'records_local_day')`,
+		`INSERT OR IGNORE INTO cache (key, value) VALUES ('records_local_day', x'01')`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			db.Close()
@@ -321,11 +325,12 @@ func (s *Store) LoadRecords(ctx context.Context) error {
 	return nil
 }
 
-// dailyExtreme returns the MAX or MIN per calendar date ("2006-01-02").
-// SQLite takes bare columns from the extreme row when the only aggregate is min/max.
+// dailyExtreme returns the MAX or MIN per station-local calendar date
+// ("2006-01-02"). SQLite takes bare columns from the extreme row when the only
+// aggregate is min/max.
 func (s *Store) dailyExtreme(ctx context.Context, column, fn string) (map[string]extreme, error) {
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
-		`SELECT strftime('%%Y-%%m-%%d', obs_time, 'unixepoch') d, %s(%s) v, obs_time
+		`SELECT local_day(obs_time) d, %s(%s) v, obs_time
 		 FROM observations WHERE %s IS NOT NULL GROUP BY d`, fn, column, column))
 	if err != nil {
 		return nil, err
@@ -441,45 +446,49 @@ func (s *Store) Series(ctx context.Context, key string, from, to time.Time, poin
 		}
 	}
 
-	high, low, highAt, lowAt, ok := s.recordsFor(e.Key, from, to)
+	high, low, highDate, lowDate, ok := s.recordsFor(e.Key, from, to)
 	if ok {
 		out.HasRecord = true
 		out.RecordHigh, out.RecordLow = high, low
-		out.RecordHighDate = highAt.Format("2006-01-02")
-		out.RecordLowDate = lowAt.Format("2006-01-02")
+		out.RecordHighDate, out.RecordLowDate = highDate, lowDate
 	}
 	return out, nil
 }
 
-// recordsFor takes the record high and low across the calendar days covered
-// by the window, using only observations from outside the window so a day is
-// never compared against itself.
-func (s *Store) recordsFor(key string, from, to time.Time) (high, low float64, highAt, lowAt time.Time, ok bool) {
+// recordsFor takes the record high and low across the station-local calendar
+// days covered by the window, using only observations from outside the window
+// so a day is never compared against itself. It returns the local dates
+// ("2006-01-02") the records were set on.
+func (s *Store) recordsFor(key string, from, to time.Time) (high, low float64, highDate, lowDate string, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	days := s.records[key]
 	if len(days) == 0 {
-		return 0, 0, time.Time{}, time.Time{}, false
+		return 0, 0, "", "", false
 	}
+	firstDay, lastDay := LocalDay(from), LocalDay(to)
+	// Walk calendar days from noon, so adding a day never lands on a daylight
+	// saving gap or repeat; the zone's 23 h and 25 h days still count once.
+	f := from.In(Local)
+	day := time.Date(f.Year(), f.Month(), f.Day(), 12, 0, 0, 0, Local)
 	seen := map[string]bool{}
-	var highDate, lowDate string
-	for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
+	for ; day.Format("2006-01-02") <= lastDay; day = day.AddDate(0, 0, 1) {
 		mmdd := day.Format("01-02")
 		if seen[mmdd] {
 			continue
 		}
 		seen[mmdd] = true
 		for date, d := range days[mmdd] {
-			if t, err := time.Parse("2006-01-02", date); err == nil && !t.Before(from.Truncate(24*time.Hour)) && t.Before(to.AddDate(0, 0, 1).Truncate(24*time.Hour)) {
+			if date >= firstDay && date <= lastDay {
 				continue // the window's own days
 			}
 			// Ties go to the earliest date, so the result does not depend on
 			// map iteration order.
 			if !ok || d.High > high || (d.High == high && date < highDate) {
-				high, highAt, highDate = d.High, d.AtHigh, date
+				high, highDate = d.High, date
 			}
 			if !ok || d.Low < low || (d.Low == low && date < lowDate) {
-				low, lowAt, lowDate = d.Low, d.AtLow, date
+				low, lowDate = d.Low, date
 			}
 			ok = true
 		}
@@ -487,7 +496,7 @@ func (s *Store) recordsFor(key string, from, to time.Time) (high, low float64, h
 			break
 		}
 	}
-	return high, low, highAt, lowAt, ok
+	return high, low, highDate, lowDate, ok
 }
 
 // ElementKeys is a convenience for validation messages.

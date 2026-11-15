@@ -3,7 +3,7 @@
 	import Chart from '$lib/Chart.svelte';
 	import Window from '$lib/Window.svelte';
 	import { getJSON } from '$lib/api.js';
-	import { fmt, unit, localTime, ELEMENTS, compass } from '$lib/units.js';
+	import { fmt, unit, localTime, ELEMENTS, compass, windowHours, calendarDay } from '$lib/units.js';
 
 	let latest = null;
 	let stats = null;
@@ -15,7 +15,7 @@
 	$: key = $page.params.key;
 	$: meta = ELEMENTS[key] ?? { label: key, unit: '' };
 
-	$: span = from && to ? (new Date(to) - new Date(from)) / 3600e3 : 24;
+	$: span = windowHours(from, to);
 
 	function budget() {
 		return Math.min(800, Math.max(120, Math.round(span * 2)));
@@ -102,8 +102,8 @@
 <section class="rounded-xl border border-slate-800/80 bg-slate-900/50 p-4">
 	<div class="mb-3 flex items-center justify-between">
 		<p class="text-xs text-slate-500">
-			{#if from}{new Date(from).toLocaleDateString('en-US', { timeZone: 'America/Chicago' })}{/if}
-			{#if from && to}–{new Date(to).toLocaleDateString('en-US', { timeZone: 'America/Chicago' })}{/if}
+			{#if from}{calendarDay(from)}{/if}
+			{#if from && to}–{calendarDay(to)}{/if}
 		</p>
 		<button
 			type="button"
