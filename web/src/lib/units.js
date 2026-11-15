@@ -10,6 +10,7 @@ export const ELEMENTS = {
 	gust: { label: 'Wind gust', unit: 'mph', conv: KT_TO_MPH, digits: 0 },
 	visibility: { label: 'Visibility', unit: 'mi', conv: (v) => v, digits: 1 },
 	ceiling: { label: 'Ceiling', unit: 'ft', conv: (v) => v, digits: 0 },
+	sky: { label: 'Sky cover', unit: '%', conv: (v) => v, digits: 0 },
 	altimeter: { label: 'Altimeter', unit: 'inHg', conv: (v) => v, digits: 2 },
 	precip: { label: 'Precipitation', unit: 'in', conv: (v) => v, digits: 2 }
 };
@@ -22,6 +23,26 @@ export function fmt(value, key) {
 		minimumFractionDigits: def.digits,
 		maximumFractionDigits: def.digits
 	});
+}
+
+// The current reading for an element key, from the API's `current` object.
+// One map for the dashboard and the element page.
+export function currentValue(c, key) {
+	if (!c) return null;
+	return (
+		{
+			temp: c.tempC,
+			dewpoint: c.dewpointC,
+			humidity: c.humidity,
+			wind: c.windKt,
+			gust: c.gustKt,
+			visibility: c.visibilitySM,
+			ceiling: c.ceilingFt,
+			sky: c.skyCoverPct,
+			altimeter: c.altimeterInHg,
+			precip: c.precipIn
+		}[key] ?? null
+	);
 }
 
 export function unit(key) {

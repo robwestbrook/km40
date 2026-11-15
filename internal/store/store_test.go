@@ -169,6 +169,106 @@ func TestRefreshRecordsReportsSnapshotWriteFailure(t *testing.T) {
 	}
 }
 
+// The SQL expression used for aggregates and the Go function used for the
+// current reading must agree on every kind of sky string.
+func TestSkyCoverSQLMatchesGo(t *testing.T) {
+	s := open(t)
+	for _, sky := range []string{
+		"CLR", "SKC", "NSC", "NCD", "CAVOK", "FEW017", "SCT022", "BKN048", "OVC003", "VV005",
+		"FEW017 SCT022", "FEW017 SCT022 BKN048", "BKN048 OVC060", "SCT040CB", "", "garbage",
+	} {
+		var got sql.NullFloat64
+		if err := s.db.QueryRow(`SELECT `+metar.SkyCoverSQL("sky")+` FROM (SELECT ? AS sky)`, sky).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		want, ok := metar.SkyCoverPercent(sky)
+		if got.Valid != ok || (ok && got.Float64 != want) {
+			t.Errorf("sky %q: SQL = %v (valid=%v), Go = %v (ok=%v)", sky, got.Float64, got.Valid, want, ok)
+		}
+	}
+	var nul sql.NullFloat64
+	if err := s.db.QueryRow(`SELECT ` + metar.SkyCoverSQL("sky") + ` FROM (SELECT NULL AS sky)`).Scan(&nul); err != nil || nul.Valid {
+		t.Errorf("NULL sky should give NULL, got %v (err %v)", nul, err)
+	}
+}
+
+// A database from before the sky_cover column gets the column and its values
+// filled in once from the stored sky text.
+func TestOpenAddsAndFillsSkyCoverColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sky.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Recreate the old shape: no column, no flag, rows with only sky text.
+	for _, q := range []string{
+		`ALTER TABLE observations DROP COLUMN sky_cover`,
+		`DELETE FROM cache WHERE key = 'sky_cover_filled'`,
+		`INSERT INTO observations (obs_time, raw, sky) VALUES (1000, 'a', 'FEW017 BKN048')`,
+		`INSERT INTO observations (obs_time, raw, sky) VALUES (2000, 'b', 'CLR')`,
+		`INSERT INTO observations (obs_time, raw, sky) VALUES (3000, 'c', '')`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	s.Close()
+
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got := map[int64]sql.NullFloat64{}
+	rows, err := s.db.Query(`SELECT obs_time, sky_cover FROM observations`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ts int64
+		var v sql.NullFloat64
+		if err := rows.Scan(&ts, &v); err != nil {
+			t.Fatal(err)
+		}
+		got[ts] = v
+	}
+	if v := got[1000]; !v.Valid || v.Float64 != 75 {
+		t.Errorf("BKN row = %+v, want 75", v)
+	}
+	if v := got[2000]; !v.Valid || v.Float64 != 0 {
+		t.Errorf("CLR row = %+v, want 0", v)
+	}
+	if v := got[3000]; v.Valid {
+		t.Errorf("empty sky row = %+v, want NULL", v)
+	}
+}
+
+// Sky cover is derived from the stored sky text at query time: percent of the
+// sky covered by the fullest layer, with unknown reports left out.
+func TestSkyCoverElement(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	base := time.Date(2021, 7, 1, 12, 0, 0, 0, time.UTC)
+	if _, err := s.Upsert(ctx, []metar.Obs{
+		{Time: base, Raw: "a", Sky: "CLR"},
+		{Time: base.Add(time.Hour), Raw: "b", Sky: "FEW017 BKN048"},
+		{Time: base.Add(2 * time.Hour), Raw: "c", Sky: ""}, // unknown: ignored
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ser, err := s.Series(ctx, "sky", base.Add(-time.Hour), base.Add(3*time.Hour), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ser.HasData || len(ser.Points) != 2 || ser.Min != 0 || ser.Max != 75 {
+		t.Errorf("sky series = %+v, want 2 points ranging 0..75", ser)
+	}
+	if ser.Unit != "%" {
+		t.Errorf("unit = %q, want %%", ser.Unit)
+	}
+}
+
 func TestSeriesUnknownElementIsATypedError(t *testing.T) {
 	_, err := open(t).Series(context.Background(), "nope", time.Now().Add(-time.Hour), time.Now(), 10)
 	if !errors.Is(err, ErrUnknownElement) {

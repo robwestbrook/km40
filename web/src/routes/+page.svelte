@@ -3,7 +3,7 @@
 	import Chart from '$lib/Chart.svelte';
 	import Window from '$lib/Window.svelte';
 	import { getJSON } from '$lib/api.js';
-	import { sentence, fmt, unit, localTime, clockTime, compass, ELEMENTS, windowHours, presetRange } from '$lib/units.js';
+	import { sentence, fmt, unit, localTime, clockTime, compass, ELEMENTS, windowHours, presetRange, currentValue } from '$lib/units.js';
 
 	let summary = null;
 	let error = '';
@@ -64,21 +64,7 @@
 	});
 
 	function current(key) {
-		const c = summary?.current;
-		if (!c) return null;
-		return (
-			{
-				temp: c.tempC,
-				dewpoint: c.dewpointC,
-				humidity: c.humidity,
-				wind: c.windKt,
-				gust: c.gustKt,
-				visibility: c.visibilitySM,
-				ceiling: c.ceilingFt,
-				altimeter: c.altimeterInHg,
-				precip: c.precipIn
-			}[key] ?? null
-		);
+		return currentValue(summary?.current, key);
 	}
 
 	function subline(key) {
@@ -88,7 +74,7 @@
 		}
 		if (key === 'temp' && c?.humidity != null) return `${fmt(c.humidity, 'humidity')}% humidity`;
 		if (key === 'precip' && c?.precipIn == null) return 'none in the last report';
-		if (key === 'ceiling' && c?.sky) return c.sky;
+		if (key === 'sky' && c?.sky) return c.sky;
 		return '';
 	}
 </script>

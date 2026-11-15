@@ -3,7 +3,7 @@
 	import Chart from '$lib/Chart.svelte';
 	import Window from '$lib/Window.svelte';
 	import { getJSON } from '$lib/api.js';
-	import { fmt, unit, localTime, ELEMENTS, compass, windowHours, calendarDay } from '$lib/units.js';
+	import { fmt, unit, localTime, ELEMENTS, compass, windowHours, calendarDay, currentValue } from '$lib/units.js';
 
 	let latest = null;
 	let stats = null;
@@ -23,19 +23,7 @@
 		return Math.min(800, Math.max(120, Math.round(windowHours(from, to) * 2)));
 	}
 
-	$: currentValue = !latest?.current
-		? null
-		: ({
-				temp: latest.current.tempC,
-				dewpoint: latest.current.dewpointC,
-				humidity: latest.current.humidity,
-				wind: latest.current.windKt,
-				gust: latest.current.gustKt,
-				visibility: latest.current.visibilitySM,
-				ceiling: latest.current.ceilingFt,
-				altimeter: latest.current.altimeterInHg,
-				precip: latest.current.precipIn
-			}[key] ?? null);
+	$: reading = currentValue(latest?.current, key);
 
 	async function load() {
 		loading = true;
@@ -85,7 +73,7 @@
 		</div>
 		<div class="text-right">
 			<p class="text-3xl font-semibold text-slate-50">
-				{fmt(currentValue, key)}
+				{fmt(reading, key)}
 				<span class="text-base font-normal text-slate-500">{unit(key)}</span>
 			</p>
 			{#if key === 'wind' && latest?.current?.windDir != null}

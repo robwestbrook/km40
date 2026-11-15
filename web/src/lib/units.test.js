@@ -1,7 +1,7 @@
 // Run with: npm --prefix web test   (Node's built-in runner, no extra dependency)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sentence, presetRange } from './units.js';
+import { sentence, presetRange, currentValue, ELEMENTS } from './units.js';
 
 const obs = (extra) => ({ tempC: 20, windKt: 0, ...extra });
 const lead = (weather) => sentence(obs({ weather })).split(' · ')[0];
@@ -54,6 +54,24 @@ test('presetRange is relative to the time it is asked for', () => {
 	assert.equal(presetRange('7d', t1).from, '2026-11-08T12:00:00.000Z');
 	assert.equal(presetRange('30d', t1).from, '2026-10-16T12:00:00.000Z');
 	assert.equal(presetRange('all', t1).from, '2012-01-11T00:00:00.000Z');
+});
+
+// One place maps an element key to its current value, for both pages.
+test('currentValue picks the current reading for each element', () => {
+	const c = { tempC: 20, windKt: 7, ceilingFt: 4800, skyCoverPct: 75, precipIn: null };
+	assert.equal(currentValue(c, 'temp'), 20);
+	assert.equal(currentValue(c, 'wind'), 7);
+	assert.equal(currentValue(c, 'ceiling'), 4800);
+	assert.equal(currentValue(c, 'sky'), 75);
+	assert.equal(currentValue(c, 'precip'), null);
+	assert.equal(currentValue(c, 'nope'), null);
+	assert.equal(currentValue(null, 'temp'), null);
+});
+
+test('every element the server reports has a display definition', () => {
+	for (const key of ['temp', 'dewpoint', 'humidity', 'wind', 'gust', 'visibility', 'ceiling', 'sky', 'altimeter', 'precip']) {
+		assert.ok(ELEMENTS[key], `missing ELEMENTS.${key}`);
+	}
 });
 
 test('presetRange has no range for custom or unknown presets', () => {

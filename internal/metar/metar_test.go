@@ -141,6 +141,34 @@ func TestRelativeHumidity(t *testing.T) {
 	}
 }
 
+// Sky cover is the fullest layer, as a percentage of the sky (oktas midpoints).
+func TestSkyCoverPercent(t *testing.T) {
+	cases := []struct {
+		sky  string
+		want float64
+		ok   bool
+	}{
+		{"CLR", 0, true},
+		{"SKC", 0, true},
+		{"NSC", 0, true},
+		{"CAVOK", 0, true},
+		{"FEW017", 19, true},
+		{"FEW017 SCT022", 44, true},
+		{"FEW017 SCT022 BKN048", 75, true},
+		{"BKN048 OVC060", 100, true},
+		{"VV005", 100, true},
+		{"SCT040CB", 44, true},
+		{"", 0, false},
+		{"garbage", 0, false},
+	}
+	for _, c := range cases {
+		got, ok := SkyCoverPercent(c.sky)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("SkyCoverPercent(%q) = %v, %v; want %v, %v", c.sky, got, ok, c.want, c.ok)
+		}
+	}
+}
+
 func TestParseOmittedWindIsCalm(t *testing.T) {
 	o, err := Parse("KM40 150115Z AUTO 10SM CLR 06/00 A3029 RMK AO2", now)
 	if err != nil {

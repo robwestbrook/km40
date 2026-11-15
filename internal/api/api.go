@@ -45,6 +45,7 @@ type Current struct {
 	GustKt        *float64 `json:"gustKt"`
 	VisibilitySM  *float64 `json:"visibilitySM"`
 	Sky           string   `json:"sky"`
+	SkyCoverPct   *float64 `json:"skyCoverPct"`
 	CeilingFt     *int     `json:"ceilingFt"`
 	Weather       string   `json:"weather"`
 	AltimeterInHg *float64 `json:"altimeterInHg"`
@@ -213,6 +214,9 @@ func currentOf(o *metar.Obs) Current {
 	if o.TempC != nil && o.DewpointC != nil {
 		rh := metar.RelativeHumidity(*o.TempC, *o.DewpointC)
 		c.Humidity = &rh
+	}
+	if pct, ok := metar.SkyCoverPercent(o.Sky); ok {
+		c.SkyCoverPct = &pct
 	}
 	return c
 }

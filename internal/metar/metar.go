@@ -3,8 +3,10 @@ package metar
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -190,6 +192,59 @@ func Parse(raw string, now time.Time) (Obs, error) {
 }
 
 func isSky(tok string) bool { return skyRe.MatchString(tok) }
+
+// skyCoverPct is the share of sky each cover amount stands for: the midpoint
+// of its oktas range (FEW 1-2, SCT 3-4, BKN 5-7, OVC 8).
+var skyCoverPct = map[string]float64{
+	"CLR": 0, "SKC": 0, "NSC": 0, "NCD": 0, "CAVOK": 0,
+	"FEW": 19, "SCT": 44, "BKN": 75, "OVC": 100, "VV": 100,
+}
+
+// SkyCoverSQL returns a SQL expression that computes the same value as
+// SkyCoverPercent over the text column col (NULL when there is no layer). It is
+// built from the same table so the two cannot drift apart. It is plain SQL on
+// purpose: a Go function called per row made a 14-year aggregate several times
+// slower.
+func SkyCoverSQL(col string) string {
+	byPct := map[float64][]string{}
+	for amount, pct := range skyCoverPct {
+		byPct[pct] = append(byPct[pct], amount)
+	}
+	pcts := make([]float64, 0, len(byPct))
+	for pct := range byPct {
+		pcts = append(pcts, pct)
+	}
+	sort.Sort(sort.Reverse(sort.Float64Slice(pcts))) // fullest first
+	var b strings.Builder
+	b.WriteString("CASE")
+	for _, pct := range pcts {
+		amounts := byPct[pct]
+		sort.Strings(amounts)
+		conds := make([]string, len(amounts))
+		for i, a := range amounts {
+			conds[i] = fmt.Sprintf("%s LIKE '%%%s%%'", col, a)
+		}
+		fmt.Fprintf(&b, " WHEN %s THEN %g", strings.Join(conds, " OR "), pct)
+	}
+	b.WriteString(" END")
+	return b.String()
+}
+
+// SkyCoverPercent reduces a stored sky string such as "FEW017 BKN048" to the
+// cover of its fullest layer, as a percentage. ok is false when the string has
+// no recognisable layer, so unknown reports stay out of statistics.
+func SkyCoverPercent(sky string) (pct float64, ok bool) {
+	for _, tok := range strings.Fields(sky) {
+		amount := tok
+		if m := skyRe.FindStringSubmatch(tok); m != nil {
+			amount = m[1]
+		}
+		if v, known := skyCoverPct[amount]; known && (!ok || v > pct) {
+			pct, ok = v, true
+		}
+	}
+	return pct, ok
+}
 
 func signed(s string) float64 {
 	neg := strings.HasPrefix(s, "M")

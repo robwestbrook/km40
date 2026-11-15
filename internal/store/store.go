@@ -38,6 +38,7 @@ var elements = []Element{
 	{Key: "gust", Label: "Wind gust", Unit: "kt", Precision: 0, column: "gust_kt", agg: "max"},
 	{Key: "visibility", Label: "Visibility", Unit: "mi", Precision: 1, column: "vis_sm", agg: "min"},
 	{Key: "ceiling", Label: "Ceiling", Unit: "ft", Precision: 0, column: "ceiling_ft", agg: "min"},
+	{Key: "sky", Label: "Sky cover", Unit: "%", Precision: 0, column: "sky_cover", agg: "avg"},
 	{Key: "altimeter", Label: "Altimeter", Unit: "inHg", Precision: 2, column: "altimeter_inhg", agg: "avg"},
 	{Key: "precip", Label: "Precipitation", Unit: "in", Precision: 2, column: "precip_in", agg: "sum"},
 }
@@ -121,7 +122,7 @@ func Open(path string) (*Store, error) {
 			temp_c REAL, dewpoint_c REAL, rh REAL,
 			wind_dir INTEGER, wind_kt REAL, gust_kt REAL,
 			vis_sm REAL, sky TEXT, ceiling_ft INTEGER, wx TEXT,
-			altimeter_inhg REAL, precip_in REAL)`,
+			altimeter_inhg REAL, precip_in REAL, sky_cover REAL)`,
 		`CREATE TABLE IF NOT EXISTS backfill (ym TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS observations_cols ON observations (obs_time)`,
@@ -139,7 +140,47 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("store: %s: %w", q, err)
 		}
 	}
+	if err := migrateSkyCover(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db, records: map[string]map[string]map[string]daily{}}, nil
+}
+
+// migrateSkyCover adds the sky_cover column to a database created before it
+// existed and fills it from the stored sky text, once. The fill reuses the same
+// expression as the Go function so the two cannot disagree. A stored column
+// keeps sky cover as cheap to aggregate as every other element; computing it
+// per row at query time made a 14-year window several times slower.
+func migrateSkyCover(db *sql.DB) error {
+	var has int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('observations') WHERE name = 'sky_cover'`).Scan(&has); err != nil {
+		return fmt.Errorf("store: inspect observations: %w", err)
+	}
+	if has == 0 {
+		if _, err := db.Exec(`ALTER TABLE observations ADD COLUMN sky_cover REAL`); err != nil {
+			return fmt.Errorf("store: add sky_cover: %w", err)
+		}
+	}
+	var filled int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM cache WHERE key = 'sky_cover_filled'`).Scan(&filled); err != nil {
+		return err
+	}
+	if filled > 0 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE observations SET sky_cover = ` + metar.SkyCoverSQL("sky")); err != nil {
+		return fmt.Errorf("store: fill sky_cover: %w", err)
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO cache (key, value) VALUES ('sky_cover_filled', x'01')`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -152,14 +193,15 @@ func (s *Store) Upsert(ctx context.Context, obs []metar.Obs) (int, error) {
 	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO observations
 		(obs_time, raw, temp_c, dewpoint_c, rh, wind_dir, wind_kt, gust_kt,
-		 vis_sm, sky, ceiling_ft, wx, altimeter_inhg, precip_in)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		 vis_sm, sky, ceiling_ft, wx, altimeter_inhg, precip_in, sky_cover)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(obs_time) DO UPDATE SET
 			raw=excluded.raw, temp_c=excluded.temp_c, dewpoint_c=excluded.dewpoint_c,
 			rh=excluded.rh, wind_dir=excluded.wind_dir, wind_kt=excluded.wind_kt,
 			gust_kt=excluded.gust_kt, vis_sm=excluded.vis_sm, sky=excluded.sky,
 			ceiling_ft=excluded.ceiling_ft, wx=excluded.wx,
-			altimeter_inhg=excluded.altimeter_inhg, precip_in=excluded.precip_in`)
+			altimeter_inhg=excluded.altimeter_inhg, precip_in=excluded.precip_in,
+			sky_cover=excluded.sky_cover`)
 	if err != nil {
 		return 0, err
 	}
@@ -175,10 +217,14 @@ func (s *Store) Upsert(ctx context.Context, obs []metar.Obs) (int, error) {
 			v := metar.RelativeHumidity(*o.TempC, *o.DewpointC)
 			rh = &v
 		}
+		var skyCover *float64
+		if pct, ok := metar.SkyCoverPercent(o.Sky); ok {
+			skyCover = &pct
+		}
 		if _, err := stmt.ExecContext(ctx,
 			o.Time.Unix(), o.Raw, o.TempC, o.DewpointC, rh,
 			o.WindDir, o.WindKt, o.GustKt, o.VisSM, o.Sky, o.CeilingFt,
-			o.Wx, o.AltimeterInHg, o.PrecipIn); err != nil {
+			o.Wx, o.AltimeterInHg, o.PrecipIn, skyCover); err != nil {
 			return n, err
 		}
 		n++

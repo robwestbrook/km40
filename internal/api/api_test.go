@@ -69,8 +69,8 @@ func TestSummaryWorksOnEmptyDatabase(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Elements) != 9 {
-		t.Fatalf("elements = %d, want 9", len(got.Elements))
+	if len(got.Elements) != 10 {
+		t.Fatalf("elements = %d, want 10", len(got.Elements))
 	}
 	if got.Station.ID != "KM40" {
 		t.Errorf("station = %q", got.Station.ID)
@@ -193,6 +193,26 @@ func TestLatestWorksWhenEmptyAndPopulated(t *testing.T) {
 	}
 }
 
+func TestLatestReportsSkyCoverPercent(t *testing.T) {
+	h, st := testHandler(t)
+	// Latest decodes the stored raw text, so it needs a real report.
+	raw := "KM40 141000Z AUTO 00000KT 10SM FEW017 BKN048 18/10 A3005"
+	if _, err := st.Upsert(t.Context(), []metar.Obs{{Time: timeFromNow(-3), Raw: raw}}); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/latest", nil))
+	var got struct {
+		Current Current `json:"current"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Current.SkyCoverPct == nil || *got.Current.SkyCoverPct != 75 {
+		t.Errorf("skyCoverPct = %v, want 75", got.Current.SkyCoverPct)
+	}
+}
+
 func TestStatusReportsCounts(t *testing.T) {
 	h, _ := testHandler(t)
 	rec := httptest.NewRecorder()
@@ -204,7 +224,7 @@ func TestStatusReportsCounts(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Observations != 0 || len(got.Elements) != 9 {
+	if got.Observations != 0 || len(got.Elements) != 10 {
 		t.Errorf("status = %+v", got)
 	}
 }
