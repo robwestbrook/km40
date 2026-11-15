@@ -3,7 +3,7 @@
 	import Chart from '$lib/Chart.svelte';
 	import Window from '$lib/Window.svelte';
 	import { getJSON } from '$lib/api.js';
-	import { sentence, fmt, unit, localTime, clockTime, compass, ELEMENTS, windowHours } from '$lib/units.js';
+	import { sentence, fmt, unit, localTime, clockTime, compass, ELEMENTS, windowHours, presetRange } from '$lib/units.js';
 
 	let summary = null;
 	let error = '';
@@ -14,8 +14,10 @@
 
 	$: span = windowHours(from, to);
 
+	// Read the window directly: the derived `span` is stale until the next
+	// update, and load() runs right after from/to change.
 	function budget() {
-		return Math.min(600, Math.max(48, Math.round(span * 2)));
+		return Math.min(600, Math.max(48, Math.round(windowHours(from, to) * 2)));
 	}
 
 	async function load() {
@@ -35,15 +37,29 @@
 		}
 	}
 
-	function setWindow(f, t) {
+	let preset = '24h';
+
+	function setWindow(f, t, p) {
 		from = f;
 		to = t;
+		preset = p;
 		load();
+	}
+
+	// A preset is relative to now, so the auto-refresh moves it forward; a
+	// custom range stays exactly as chosen.
+	function refresh() {
+		const range = presetRange(preset, new Date());
+		if (range) {
+			from = range.from;
+			to = range.to;
+		}
+		return load();
 	}
 
 	onMount(() => {
 		load();
-		const timer = setInterval(load, 5 * 60 * 1000);
+		const timer = setInterval(refresh, 5 * 60 * 1000);
 		return () => clearInterval(timer);
 	});
 

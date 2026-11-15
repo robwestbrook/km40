@@ -1,4 +1,6 @@
 <script>
+	import { presetRange } from '$lib/units.js';
+
 	export let from = '';
 	export let to = '';
 	export let onchange = () => {};
@@ -18,20 +20,15 @@
 			active = 'custom';
 			from = customFrom;
 			to = customTo;
-			onchange(from, to);
+			onchange(from, to, active);
 			return;
 		}
-		const now = new Date();
-		const start = new Date(now);
-		if (preset === '24h') start.setTime(now.getTime() - 24 * 3600e3);
-		else if (preset === '7d') start.setTime(now.getTime() - 7 * 86400e3);
-		else if (preset === '30d') start.setTime(now.getTime() - 30 * 86400e3);
-		else if (preset === '1y') start.setDate(now.getDate() - 365);
-		else if (preset === 'all') start.setTime(Date.UTC(2012, 0, 11));
+		const range = presetRange(preset, new Date());
+		if (!range) return;
 		active = preset;
-		from = start.toISOString();
-		to = now.toISOString();
-		onchange(from, to);
+		from = range.from;
+		to = range.to;
+		onchange(from, to, active);
 	}
 
 	function custom(event) {

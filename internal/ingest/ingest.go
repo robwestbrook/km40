@@ -214,8 +214,12 @@ func Run(ctx context.Context, st *store.Store, client *http.Client, log func(str
 			log("live: " + err.Error())
 		}
 		if n > 0 && time.Since(lastRefresh) > time.Hour {
-			if err := st.RefreshRecords(ctx); err == nil {
-				lastRefresh = time.Now()
+			// Count the attempt even when it fails (for example a snapshot
+			// that cannot be saved): retrying a 30 s scan every poll would
+			// hammer the drive. The next try is an hour away.
+			lastRefresh = time.Now()
+			if err := st.RefreshRecords(ctx); err != nil && log != nil {
+				log("records: " + err.Error())
 			}
 		}
 		select {

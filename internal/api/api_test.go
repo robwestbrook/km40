@@ -112,6 +112,53 @@ func TestSeriesRejectsUnknownElement(t *testing.T) {
 	}
 }
 
+// A database failure is the server's fault, not a bad request: only an
+// unknown element or bad parameter is a 400.
+func TestSeriesDatabaseFailureIsServerError(t *testing.T) {
+	h, st := testHandler(t)
+	st.Close()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/series?element=temp", nil))
+	if rec.Code != 500 {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+}
+
+func TestStatusDatabaseFailureIsServerError(t *testing.T) {
+	h, st := testHandler(t)
+	st.Close()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/status", nil))
+	if rec.Code != 500 {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+}
+
+// A value that cannot be encoded must become an error response, not a silent
+// 200 with an empty body.
+func TestWriteJSONReportsEncodeFailure(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeJSON(rec, make(chan int))
+	if rec.Code != 500 {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+}
+
+// A directory without an index is not browsable: it falls back to the app
+// shell like any other unknown path.
+func TestStaticDirectoryIsNotListed(t *testing.T) {
+	h, _ := testHandler(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/_app/", nil))
+	body, _ := io.ReadAll(rec.Body)
+	if strings.Contains(string(body), "app.js") {
+		t.Errorf("directory listing exposed: %q", body)
+	}
+	if !strings.Contains(string(body), "spa") {
+		t.Errorf("want the app shell, got %q", body)
+	}
+}
+
 func TestSeriesRejectsBadDates(t *testing.T) {
 	h, _ := testHandler(t)
 	rec := httptest.NewRecorder()

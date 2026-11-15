@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"math"
 	"path/filepath"
 	"testing"
@@ -140,6 +141,38 @@ func TestOpenDropsStaleRecordsSnapshotOnce(t *testing.T) {
 	s.Close()
 	if n := count(); n != 1 {
 		t.Errorf("a snapshot written after the change must survive a reopen (rows=%d)", n)
+	}
+}
+
+// If the snapshot cannot be persisted the caller must hear about it, while the
+// in-memory records (already rebuilt) stay usable.
+func TestRefreshRecordsReportsSnapshotWriteFailure(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	if _, err := s.Upsert(ctx, []metar.Obs{obsAt(chi(t, 2019, 7, 1, 12, 0), 30)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DROP TABLE cache`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RefreshRecords(ctx); err == nil {
+		t.Error("RefreshRecords hid a snapshot write failure")
+	}
+	from := chi(t, 2021, 7, 1, 0, 0).UTC()
+	to := chi(t, 2021, 7, 1, 23, 59).UTC()
+	ser, err := s.Series(ctx, "temp", from, to, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ser.HasRecord || ser.RecordHigh != 30 {
+		t.Errorf("in-memory records were not kept: %+v", ser)
+	}
+}
+
+func TestSeriesUnknownElementIsATypedError(t *testing.T) {
+	_, err := open(t).Series(context.Background(), "nope", time.Now().Add(-time.Hour), time.Now(), 10)
+	if !errors.Is(err, ErrUnknownElement) {
+		t.Errorf("err = %v, want ErrUnknownElement", err)
 	}
 }
 

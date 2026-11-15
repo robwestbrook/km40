@@ -18,7 +18,9 @@
 	$: span = windowHours(from, to);
 
 	function budget() {
-		return Math.min(800, Math.max(120, Math.round(span * 2)));
+		// Read the window directly: the derived `span` is stale until the next
+		// update, and this runs right after from/to change.
+		return Math.min(800, Math.max(120, Math.round(windowHours(from, to) * 2)));
 	}
 
 	$: currentValue = !latest?.current

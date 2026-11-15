@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,6 +15,10 @@ import (
 
 	"km40/internal/metar"
 )
+
+// ErrUnknownElement is returned for an element key the store does not have; it
+// is a caller mistake, unlike a database failure.
+var ErrUnknownElement = errors.New("store: unknown element")
 
 // Element is one reported data point, in stored (canonical) units.
 type Element struct {
@@ -94,6 +99,8 @@ type extreme struct {
 
 type Store struct {
 	db *sql.DB
+
+	refreshMu sync.Mutex // serialises RefreshRecords
 
 	mu      sync.RWMutex
 	records map[string]map[string]map[string]daily // element -> "01-02" -> "2006-01-02" -> day
@@ -180,8 +187,8 @@ func (s *Store) Upsert(ctx context.Context, obs []metar.Obs) (int, error) {
 }
 
 // Reparse re-decodes every stored report from its raw text, so a parser fix
-// can be applied to history. Rows are read into memory first because the
-// store keeps a single connection.
+// can be applied to history. Rows are read into memory first so the read
+// cursor is closed before the write transaction starts.
 func (s *Store) Reparse(ctx context.Context) (int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT obs_time, raw FROM observations`)
 	if err != nil {
@@ -264,6 +271,10 @@ func (s *Store) MarkMonth(ctx context.Context, ym string) error {
 // RefreshRecords rebuilds the per-calendar-day records in memory: for every
 // MM-DD, one entry per year that has data.
 func (s *Store) RefreshRecords(ctx context.Context) error {
+	// A rebuild is a full-table scan (about 30 s on this drive). Startup and
+	// the post-backfill refresh can both ask for one; run them one at a time.
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
 	recs := make(map[string]map[string]map[string]daily, len(elements))
 	for _, e := range elements {
 		highs, err := s.dailyExtreme(ctx, e.column, "MAX")
@@ -298,8 +309,14 @@ func (s *Store) RefreshRecords(ctx context.Context) error {
 	s.mu.Lock()
 	s.records = recs
 	s.mu.Unlock()
-	if blob, err := json.Marshal(recs); err == nil {
-		s.db.ExecContext(ctx, `INSERT OR REPLACE INTO cache (key, value) VALUES ('records', ?)`, blob)
+	// The in-memory records are already live; a snapshot that cannot be saved
+	// only costs the next restart a rebuild, but the caller should know.
+	blob, err := json.Marshal(recs)
+	if err != nil {
+		return fmt.Errorf("records snapshot: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO cache (key, value) VALUES ('records', ?)`, blob); err != nil {
+		return fmt.Errorf("records snapshot: %w", err)
 	}
 	return nil
 }
@@ -354,7 +371,7 @@ func (s *Store) dailyExtreme(ctx context.Context, column, fn string) (map[string
 func (s *Store) Series(ctx context.Context, key string, from, to time.Time, points int) (Series, error) {
 	e, ok := element(key)
 	if !ok {
-		return Series{}, fmt.Errorf("store: unknown element %q", key)
+		return Series{}, fmt.Errorf("%w %q", ErrUnknownElement, key)
 	}
 	if points < 1 {
 		points = 240

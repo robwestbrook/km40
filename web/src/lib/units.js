@@ -50,6 +50,20 @@ export function localTime(iso) {
 	});
 }
 
+// The window for a preset button, relative to `now`; null for a custom range
+// or anything unrecognised. Kept pure so a refresh can recompute it as time
+// passes instead of reusing the instants from the moment of the click.
+export function presetRange(preset, now) {
+	const start = new Date(now);
+	if (preset === '24h') start.setTime(now.getTime() - 24 * 3600e3);
+	else if (preset === '7d') start.setTime(now.getTime() - 7 * 86400e3);
+	else if (preset === '30d') start.setTime(now.getTime() - 30 * 86400e3);
+	else if (preset === '1y') start.setDate(now.getDate() - 365);
+	else if (preset === 'all') start.setTime(Date.UTC(2012, 0, 11));
+	else return null;
+	return { from: start.toISOString(), to: now.toISOString() };
+}
+
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 // Hours covered by a window. A date-only end is a whole station-local day, so

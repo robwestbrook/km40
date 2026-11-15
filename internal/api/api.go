@@ -3,6 +3,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -133,8 +134,12 @@ func New(st *store.Store, static fs.FS) http.Handler {
 		}
 		key := r.URL.Query().Get("element")
 		ser, err := st.Series(r.Context(), key, from, to, points)
-		if err != nil {
+		if errors.Is(err, store.ErrUnknownElement) {
 			http.Error(w, fmt.Sprintf("%v (valid elements: %s)", err, store.ElementKeys()), http.StatusBadRequest)
+			return
+		}
+		if err != nil {
+			httpErr(w, err)
 			return
 		}
 		writeJSON(w, ser)
@@ -164,7 +169,11 @@ func New(st *store.Store, static fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		out := Status{}
-		out.Observations, _ = st.Count(ctx)
+		var err error
+		if out.Observations, err = st.Count(ctx); err != nil {
+			httpErr(w, err)
+			return
+		}
 		first, last, err := st.Span(ctx)
 		if err != nil {
 			httpErr(w, err)
@@ -256,10 +265,17 @@ func window(r *http.Request, defaultPoints int) (time.Time, time.Time, int, erro
 	return from, to, points, nil
 }
 
+// writeJSON encodes before writing anything, so an encoding failure becomes a
+// 500 instead of a 200 with a truncated or empty body.
 func writeJSON(w http.ResponseWriter, v any) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	json.NewEncoder(w).Encode(v)
+	w.Write(append(body, '\n'))
 }
 
 func httpErr(w http.ResponseWriter, err error) {
@@ -279,7 +295,15 @@ func staticHandler(fsys fs.FS) http.Handler {
 		if name == "" || name == "." {
 			name = "index.html"
 		}
-		if _, err := fs.Stat(fsys, name); err != nil {
+		info, err := fs.Stat(fsys, name)
+		if err == nil && info.IsDir() {
+			// A directory is only served through its index; FileServer would
+			// otherwise list its contents.
+			if _, err = fs.Stat(fsys, path.Join(name, "index.html")); err != nil {
+				info = nil
+			}
+		}
+		if err != nil || info == nil {
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				http.NotFound(w, r)
 				return
