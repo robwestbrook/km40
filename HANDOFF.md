@@ -1,6 +1,6 @@
 # Handoff — KM40 weather dashboard
 
-- **Written:** 2026-11-15 14:20 CST (20:20 UTC)
+- **Written:** 2026-11-15 14:19 CST (20:19 UTC); the first version of this file, written a few minutes earlier, is archived as `handoffs/HANDOFF-2026-11-15-1416.md`. This update only records the user's confirmation that the install works.
 - **Session scope:** Resume from the previous handoff, make the dashboard installable as an iPhone home-screen web app, then commit, merge, push and deploy it, clean up the worktree and update the docs.
 - **Branch / last commit:** `main`; the newest commit is this handoff and README update (see `git log`). The last *code* commit is `4023658` "Make the dashboard installable as a home-screen web app". **Pushed** to `origin/main` at the user's request, and **deployed** as release `release-20261115-141357-4023658`.
 - **Working tree:** clean after the handoff commit
@@ -13,8 +13,8 @@ Monroe County Airport, MS) with SQLite history from 2012. It is **live at https:
 on the shared Linode (`bps`, 173.255.193.174), behind Caddy, as systemd service `km40` on `127.0.0.1:8082`.
 Production is the source of truth for data (the local `km40.db` is a stale seed). This session added a web app
 manifest, icons and iPhone meta tags so it can be installed from Safari (Share, then Add to Home Screen). That is
-deployed and the live files were checked, but **it has not been tried on a real iPhone**. No product work is
-pending. **Do not do any database work** (standing rule below), do not push again and do not touch the other apps
+deployed, the live files were checked, and **the user installed it on their iPhone and approved it** ("Install works.
+Everything looks correct. I approve."). No product work is pending. **Do not do any database work** (standing rule below), do not push again and do not touch the other apps
 on the server unless asked.
 
 ## Standing rules from the user
@@ -51,8 +51,11 @@ Said this session (each approval is scoped to what it names):
   installable as a web app."** That opted out of the questions and the written design, so there is **no design doc for
   this change**; it is recorded here and in `README.md` instead.
 - "commit, merge, push, and deploy." Done as one fast-forward merge, one push, one plain `deploy/deploy.sh`.
-- "Clean up the worktree, update HANDOFF.md and any file that needs to update, commit, and push." (this handoff, the
-  `README.md` addition and the push).
+- "Clean up the worktree, update HANDOFF.md and any file that needs to update, commit, and push." (the first handoff,
+  the `README.md` addition and that push; done as commit `9b128bc`).
+- **"Install works. Everything looks correct. I approve."** The user tried the install on their iPhone. That covers the
+  icon, the name, full-screen mode and the layout as they saw them; they gave no details beyond "correct".
+- "Yes, update the handoff, commit and push" (this update only: one commit and one push).
 
 **Not granted:** pushes beyond the ones named above; changing the other apps (`bps`, `lifeapp`, Forward Church) or their
 repos (read only); any server change beyond the km40 user and directories, the `km40` service and the one Caddy block;
@@ -66,23 +69,24 @@ handoff (previous one archived to `handoffs/HANDOFF-2026-11-15-1416.md`), commit
 commit `4023658` was fast-forward merged, pushed (`fef1355..4023658`) and deployed; `deploy.sh` finished with
 "Deployed release-20261115-141357-4023658".
 
+After that the user said "Install works. Everything looks correct. I approve.", then "Yes, update the handoff, commit and
+push", which produced this update (committed and pushed as a follow-up to `9b128bc`).
+
 Live checks run from the server through Caddy (the local `curl` is blocked by a hook, so use ssh): `/manifest.webmanifest`
 200 `application/manifest+json`; `/apple-touch-icon.png` and `/icon-512.png` 200 `image/png`; the home page links the manifest
-and touch icon; `km40` active; `current` points at the new release. Not run: anything on an iPhone.
+and touch icon; `km40` active; `current` points at the new release. The iPhone install was then confirmed by the user (below).
 
 ## Decisions awaiting the user
 
-None block anything.
+None block anything. (The earlier question about the iPhone install is settled: the user approved it. Changing the icon
+later means editing `tools/make-icons.py`, regenerating, committing and redeploying.)
 
-1. **Does the install work and look right on the iPhone?** (new) Check the icon, the name "KM40", full-screen mode and the
-   spacing under the notch and home bar. The icon is a sun behind a cloud on dark blue; changing it means editing
-   `tools/make-icons.py`, regenerating, committing and redeploying.
-2. **Long-range chart line vs labeled extremes** (open since the first session): charts plot bucket averages while
+1. **Long-range chart line vs labeled extremes** (open since the first session): charts plot bucket averages while
    "Window low/high" come from raw observations, so a 14-year temperature chart looks inconsistent with its labels.
    A min/max band would fix it. Recommended if it confuses; not requested.
-3. **Precipitation record semantics** (open since the first session): `precip` records use per-bucket sums, so "record low"
+2. **Precipitation record semantics** (open since the first session): `precip` records use per-bucket sums, so "record low"
    is nearly meaningless. The user chose to keep the element; how its records should read is undecided.
-4. **Disk tidy:** `km40.pre-review-fixes.db` (56 MB, gitignored) is the pre-migration backup of the real DB, and the old
+3. **Disk tidy:** `km40.pre-review-fixes.db` (56 MB, gitignored) is the pre-migration backup of the real DB, and the old
    scratchpad copies and test binaries also exist. Delete when the user is satisfied. Not decided, and it counts as database work, so ask first.
 
 ## Next steps
@@ -91,14 +95,13 @@ None block anything.
 
 **Proposed, needs the user's go-ahead:**
 
-1. Try the install on the iPhone (decision 1) and fix whatever looks wrong.
-2. Min/max chart band for ranges over a day (decision 2). Touches `internal/store/store.go` and `web/src/lib/Chart.svelte`.
-3. Remaining review leftovers, deliberately not done: `store.elements` duplicated in `web/src/lib/units.js` `ELEMENTS`
+1. Min/max chart band for ranges over a day (decision 1). Touches `internal/store/store.go` and `web/src/lib/Chart.svelte`.
+2. Remaining review leftovers, deliberately not done: `store.elements` duplicated in `web/src/lib/units.js` `ELEMENTS`
    (merging needs an API field or build step); `Station` lat/lon/elevation served but unused by the UI (removing changes
    the API); `Series` computes Min/Max in the loop for every element but only precipitation needs it.
-4. Known visual flaws that pre-date this work: altimeter chart y-axis float noise (`30.400000000000006`); duplicate x-axis
+3. Known visual flaws that pre-date this work: altimeter chart y-axis float noise (`30.400000000000006`); duplicate x-axis
    date labels in the 7-day view.
-5. Future updates ship with `deploy/deploy.sh` from a clean tree (and, only if the user asks, `git push`).
+4. Future updates ship with `deploy/deploy.sh` from a clean tree (and, only if the user asks, `git push`).
 
 ## What happened this session
 
@@ -126,11 +129,12 @@ None block anything.
 
 - `go vet ./...` clean; `go test -count=1 ./...`: `internal/api`, `internal/ingest`, `internal/metar`, `internal/store` ok; `npm --prefix web test` 15/15 (all run before the deploy).
 - Production: `km40` active, `current` -> `/opt/km40/releases/release-20261115-141357-4023658`; manifest and icons served with correct content types; the home page links them.
+- **iPhone install confirmed by the user**: it installs, and the icon, title, full-screen mode and layout looked correct to them
+  ("Install works. Everything looks correct. I approve."). I did not see it myself.
 - `deploy.sh` second-run path: the backup, switch, restart and health-check steps ran without error. The **rollback** branch (failed health check) has still never run.
 
 **Done but not verified**
 
-- **Not tried on an iPhone**: install, icon, title, full-screen behaviour and safe-area layout are unchecked.
 - The deployed site was **not looked at in a rendered browser** on the public domain; only HTTP responses were checked.
 - I did not list `/var/lib/km40/backups` after the deploy; the script reported the backup step without error.
 - Why precipitation has no data in any window checked (2018-19, 2024): unverified; the archive METARs may not carry it.
@@ -203,7 +207,7 @@ Server layout: binary `/opt/km40/releases/<release>/km40` (live one via `/opt/km
 ```sh
 cd /mnt/ydrive/km40
 git status --short                 # expect clean
-git log --oneline -3               # expect this handoff/README commit, then 4023658 (installable web app), fef1355
+git log --oneline -4               # expect this update, then 9b128bc (handoff/README), 4023658 (installable web app), fef1355
 git worktree list                  # expect only /mnt/ydrive/km40 [main]
 git branch                         # expect only main
 git fetch origin && git rev-list --count origin/main..main   # expect 0 (everything is pushed)
