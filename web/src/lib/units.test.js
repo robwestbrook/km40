@@ -1,7 +1,7 @@
 // Run with: npm --prefix web test   (Node's built-in runner, no extra dependency)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sentence, presetRange, currentValue, isCircular, bearingText, prevailingText, rangeOf, ELEMENTS, ARCHIVE_START, ARCHIVE_SINCE } from './units.js';
+import { sentence, presetRange, currentValue, isCircular, bearingText, prevailingText, rangeOf, needleAngle, speedText, ELEMENTS, ARCHIVE_START, ARCHIVE_SINCE } from './units.js';
 
 const obs = (extra) => ({ tempC: 20, windKt: 0, ...extra });
 const lead = (weather) => sentence(obs({ weather })).split(' · ')[0];
@@ -114,4 +114,28 @@ test('a bearing reads as compass point and degrees', () => {
 test('presetRange has no range for custom or unknown presets', () => {
 	assert.equal(presetRange('custom', new Date()), null);
 	assert.equal(presetRange('', new Date()), null);
+});
+
+test('needleAngle gives the bearing in 0-359, and null when no needle should show', () => {
+	assert.equal(needleAngle(245, 9), 245);
+	assert.equal(needleAngle(0, 5), 0);
+	assert.equal(needleAngle(360, 5), 0); // north is never 360
+	assert.equal(needleAngle(-10, 5), 350);
+});
+
+test('needleAngle is null for calm, variable and missing data', () => {
+	assert.equal(needleAngle(0, 0), null); // calm reported as 00000KT
+	assert.equal(needleAngle(245, 0), null);
+	assert.equal(needleAngle(null, 6), null); // variable
+	assert.equal(needleAngle(undefined, 6), null);
+	assert.equal(needleAngle(Number.NaN, 6), null);
+	assert.equal(needleAngle(null, null), null);
+});
+
+test('speedText reads as mph, and as a dash with no reading', () => {
+	assert.equal(speedText(8), '9 mph'); // 8 kt = 9.2 mph
+	assert.equal(speedText(0), '0 mph');
+	assert.equal(speedText(null), '—');
+	assert.equal(speedText(undefined), '—');
+	assert.equal(speedText(Number.NaN), '—');
 });

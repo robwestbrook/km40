@@ -86,6 +86,19 @@ export function bearingText(deg) {
 	return `${compass(deg)} ${Math.round(deg) % 360}°`;
 }
 
+// The compass needle's angle (0-359, pointing to where the wind comes from),
+// or null when there is nothing to point at: calm, variable, or no reading.
+export function needleAngle(deg, speedKt) {
+	if (deg === null || deg === undefined || Number.isNaN(deg) || speedKt === 0) return null;
+	return ((deg % 360) + 360) % 360;
+}
+
+// "9 mph" for a wind speed in knots; a dash with no reading.
+export function speedText(speedKt) {
+	if (speedKt === null || speedKt === undefined || Number.isNaN(speedKt)) return '—';
+	return `${fmt(speedKt, 'wind')} ${unit('wind')}`;
+}
+
 // The station's time zone: every displayed time and calendar day uses it.
 export const TIMEZONE = 'America/Chicago';
 
