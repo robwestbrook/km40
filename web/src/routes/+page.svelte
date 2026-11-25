@@ -1,9 +1,10 @@
 <script>
 	import { onMount } from 'svelte';
 	import Chart from '$lib/Chart.svelte';
+	import Compass from '$lib/Compass.svelte';
 	import Window from '$lib/Window.svelte';
 	import { getJSON } from '$lib/api.js';
-	import { sentence, fmt, unit, localTime, clockTime, compass, ELEMENTS, windowHours, presetRange, currentValue, isCircular, prevailingText } from '$lib/units.js';
+	import { sentence, fmt, unit, localTime, clockTime, compass, ELEMENTS, windowHours, presetRange, currentValue, isCircular, prevailingText, needleAngle, speedText } from '$lib/units.js';
 
 	let summary = null;
 	let error = '';
@@ -154,7 +155,16 @@
 				</div>
 
 				<div class="mt-3">
-					<Chart points={el.points} name={el.element} rangeHours={span} height={78} />
+					{#if el.element === 'winddir'}
+						<div class="flex justify-center">
+							<Compass
+								bearing={needleAngle(summary.current?.windDir, summary.current?.windKt)}
+								speed={speedText(summary.current?.windKt)}
+							/>
+						</div>
+					{:else}
+						<Chart points={el.points} name={el.element} rangeHours={span} height={78} />
+					{/if}
 				</div>
 
 				<dl class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-slate-800/80 pt-2 text-[11px]">
