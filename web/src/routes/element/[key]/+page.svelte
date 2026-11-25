@@ -1,9 +1,10 @@
 <script>
 	import { page } from '$app/stores';
 	import Chart from '$lib/Chart.svelte';
+	import Compass from '$lib/Compass.svelte';
 	import Window from '$lib/Window.svelte';
 	import { getJSON } from '$lib/api.js';
-	import { fmt, unit, localTime, ELEMENTS, compass, windowHours, calendarDay, currentValue, isCircular, prevailingText, ARCHIVE_SINCE } from '$lib/units.js';
+	import { fmt, unit, localTime, ELEMENTS, compass, windowHours, calendarDay, currentValue, isCircular, prevailingText, needleAngle, speedText, ARCHIVE_SINCE } from '$lib/units.js';
 
 	let latest = null;
 	let stats = null;
@@ -76,7 +77,7 @@
 				{fmt(reading, key)}
 				<span class="text-base font-normal text-slate-500">{unit(key)}</span>
 			</p>
-			{#if (key === 'wind' || key === 'winddir') && latest?.current?.windDir != null}
+			{#if key === 'wind' && latest?.current?.windDir != null}
 				<p class="text-xs text-slate-500">
 					from {compass(latest.current.windDir)} ({latest.current.windDir}°)
 				</p>
@@ -103,12 +104,22 @@
 		>
 	</div>
 	<Window {from} {to} onchange={setWindow} />
-	<div class="mt-4">
-		{#if stats}
-			<Chart points={stats.points} name={key} rangeHours={span} height={320} large />
-		{:else}
-			<div class="grid h-80 place-items-center text-xs text-slate-500">No data yet</div>
+	<div class="mt-4 {key === 'winddir' ? 'flex flex-col items-center gap-4 sm:flex-row sm:items-start' : ''}">
+		{#if key === 'winddir'}
+			<div class="shrink-0">
+				<Compass
+					bearing={needleAngle(latest?.current?.windDir, latest?.current?.windKt)}
+					speed={speedText(latest?.current?.windKt)}
+				/>
+			</div>
 		{/if}
+		<div class="w-full min-w-0 flex-1">
+			{#if stats}
+				<Chart points={stats.points} name={key} rangeHours={span} height={320} large />
+			{:else}
+				<div class="grid h-80 place-items-center text-xs text-slate-500">No data yet</div>
+			{/if}
+		</div>
 	</div>
 </section>
 
