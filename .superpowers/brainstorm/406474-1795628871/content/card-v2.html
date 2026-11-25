@@ -1,0 +1,39 @@
+<h2>Card with the speed as the heading</h2>
+<p class="subtitle">The big number under "Wind direction" is now the wind speed (it was "245 °"). The degrees live only in the dial.</p>
+
+<div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:14px;max-width:340px;color:#e2e8f0">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+    <div>
+      <div style="font-size:14px;font-weight:500;color:#cbd5e1">Wind direction</div>
+      <div style="font-size:26px;font-weight:600;margin-top:4px;color:#f8fafc">9 <span style="font-size:14px;font-weight:400;color:#64748b">mph</span></div>
+      <div style="font-size:12px;color:#64748b;height:16px">WSW</div>
+    </div>
+    <div style="font-size:11px;border:1px solid #334155;border-radius:999px;padding:3px 10px;color:#94a3b8">Details →</div>
+  </div>
+  <div style="display:flex;justify-content:center;margin:8px 0">
+    <svg viewBox="0 0 200 200" width="190" height="190">
+      <circle cx="100" cy="100" r="82" fill="#0b1220" stroke="#334155" stroke-width="2"/>
+      <g stroke="#475569" stroke-width="1.5">
+        <line x1="100" y1="18" x2="100" y2="30"/><line x1="182" y1="100" x2="170" y2="100"/>
+        <line x1="100" y1="182" x2="100" y2="170"/><line x1="18" y1="100" x2="30" y2="100"/>
+      </g>
+      <g stroke="#334155" stroke-width="1">
+        <line x1="100" y1="18" x2="100" y2="24" transform="rotate(45 100 100)"/><line x1="100" y1="18" x2="100" y2="24" transform="rotate(135 100 100)"/>
+        <line x1="100" y1="18" x2="100" y2="24" transform="rotate(225 100 100)"/><line x1="100" y1="18" x2="100" y2="24" transform="rotate(315 100 100)"/>
+      </g>
+      <g font-size="13" font-weight="600" fill="#94a3b8" text-anchor="middle" font-family="sans-serif">
+        <text x="100" y="46" fill="#38bdf8">N</text><text x="156" y="105">E</text>
+        <text x="100" y="165">S</text><text x="44" y="105">W</text>
+      </g>
+      <g transform="rotate(245 100 100)">
+        <polygon points="100,34 106,100 94,100" fill="#38bdf8"/>
+        <polygon points="94,100 106,100 100,122" fill="#475569"/>
+      </g>
+      <circle cx="100" cy="100" r="5" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>
+      <text x="100" y="152" font-size="20" font-weight="600" fill="#f1f5f9" text-anchor="middle" font-family="sans-serif">245°</text>
+    </svg>
+  </div>
+  <div style="border-top:1px solid #1e293b;padding-top:8px;display:flex;justify-content:space-between;font-size:11px">
+    <span style="color:#64748b">Prevailing</span><span style="color:#cbd5e1">SSW · 14%</span>
+  </div>
+</div>
